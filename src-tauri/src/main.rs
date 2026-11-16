@@ -78,12 +78,12 @@ fn recording_event(
     }
     let current = webview.url().map_err(|error| error.to_string())?;
     let page = url::Url::parse(&page_url).map_err(|error| error.to_string())?;
-    let allowed = |parsed: &url::Url| {
-        parsed.scheme() == "https"
-            && parsed.host_str() == Some("1xlite-6487.com")
-            && parsed.path().starts_with("/en/games/solitaire")
-    };
-    if !allowed(&current) || !allowed(&page) {
+    let is_solitaire_page = current.scheme() == "https"
+        && current.host_str() == Some("1xlite-6487.com")
+        && current.path().starts_with("/en/games/solitaire");
+    let is_allowed_game_frame = page.scheme() == "https"
+        && page.host_str() == Some("1xlite-6487.com");
+    if !is_solitaire_page || !is_allowed_game_frame {
         return Err("Perekaman hanya diizinkan pada halaman Solitaire yang ditentukan.".to_string());
     }
     match event_type.as_str() {
@@ -101,8 +101,9 @@ fn recording_event(
 
 const MOUSE_RECORDING_SCRIPT: &str = r#"
 (() => {
-  if (window.top !== window || location.hostname !== '1xlite-6487.com' ||
-      !location.pathname.startsWith('/en/games/solitaire') ||
+  const topPath = (() => { try { return window.top.location.pathname; } catch (_) { return ''; } })();
+  if (location.hostname !== '1xlite-6487.com' ||
+      !(location.pathname.startsWith('/en/games/solitaire') || topPath.startsWith('/en/games/solitaire')) ||
       window.__GAME_MOUSE_RECORDING_INSTALLED__) return;
   window.__GAME_MOUSE_RECORDING_INSTALLED__ = true;
   if (!window.__TAURI_INTERNALS__ || typeof window.__TAURI_INTERNALS__.invoke !== 'function') return;
@@ -184,7 +185,7 @@ fn main() {
                 WebviewUrl::External(start_url),
             )
             .data_directory(profile_dir)
-            .initialization_script(MOUSE_RECORDING_SCRIPT);
+            .initialization_script_for_all_frames(MOUSE_RECORDING_SCRIPT);
 
             window.add_child(
                 browser,
