@@ -164,13 +164,13 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const nodes = Array.from(document.querySelectorAll('[class*="card"],[data-card],[data-testid*="card"],[aria-label*="card" i]'));
     const cards = [];
     const seen = new Set();
-    const rankSuit = /\\b(10|[2-9]|[AJQK])\\s*(?:of\\s*)?(♠|♥|♦|♣|spades?|hearts?|diamonds?|clubs?)\\b?/i;
-    const rankOnly = /\\b(ace|king|queen|jack|10|[2-9])\\s+of\\s+(spades?|hearts?|diamonds?|clubs?)\\b/i;
+    const rankSuit = /(?:^|\b)(10|[2-9]|[AJQK])\s*(?:of\s*)?(♠|♥|♦|♣|spades?|hearts?|diamonds?|clubs?)(?:\b|$)/i;
+    const rankOnly = /\b(ace|king|queen|jack|10|[2-9])\s+of\s+(spades?|hearts?|diamonds?|clubs?)\b/i;
     for (const node of nodes) {
       if (!(node instanceof HTMLElement)) continue;
       const rect = node.getBoundingClientRect();
       if (rect.width < 12 || rect.height < 18 || rect.bottom < 0 || rect.right < 0 || rect.top > innerHeight || rect.left > innerWidth) continue;
-      const raw = [node.getAttribute('aria-label'), node.getAttribute('title'), node.getAttribute('data-card'), node.getAttribute('data-value'), node.getAttribute('alt'), node.textContent, node.className].filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim();
+      const raw = [node.getAttribute('aria-label'), node.getAttribute('title'), node.getAttribute('data-card'), node.getAttribute('data-value'), node.getAttribute('alt'), node.textContent, node.className].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
       const match = raw.match(rankSuit) || raw.match(rankOnly);
       const faceUp = !!match;
       const back = /back|covered|hidden|face-down/i.test(raw);
@@ -180,7 +180,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       if (seen.has(key)) continue;
       seen.add(key);
       let code = 'UNKNOWN';
-      if (match) code = match[0].toUpperCase().replace(/\\s+OF\\s+/,'_');
+      if (match) code = match[0].toUpperCase().replace(/\s+OF\s+/,'_');
       else if (back) code = 'BACK';
       cards.push({ code, faceUp, slot });
     }
