@@ -11,7 +11,11 @@ import {
 } from 'lucide-react';
 
 type Section = 'browser' | 'data' | 'admin';
-type MouseEventData = { type: 'move' | 'click'; x: number; y: number; button?: number; elapsed_ms: number; label?: string };
+type MouseEventData = { type: 'move' | 'click' | 'board'; x: number; y: number; button?: number; elapsed_ms: number; label?: string };
+type BoardCard = { code: string; faceUp: boolean; slot: string };
+type BoardSnapshot = { cards: BoardCard[]; signature: string };
+type PatternAlert = { status: 'completed' | 'incomplete'; title: string; cards: BoardCard[]; steps: string[] };
+function decodeBoard(label?: string): BoardSnapshot | null { try { const parsed = JSON.parse(label || ''); return parsed && Array.isArray(parsed.cards) && typeof parsed.signature === 'string' ? parsed as BoardSnapshot : null; } catch { return null; } }
 type SavedRecord = { id: string; title: string; duration_ms: number; event_count: number; status: 'completed' | 'incomplete'; events?: MouseEventData[]; recorded_at: string };
 
 const DEFAULT_URL = 'https://1xlite-6487.com/en/games/solitaire';
@@ -50,6 +54,8 @@ export default function App() {
   const [savingRecord, setSavingRecord] = useState(false);
   const [search, setSearch] = useState('');
   const [notice, setNotice] = useState('');
+  const [patternAlert, setPatternAlert] = useState<PatternAlert | null>(null);
+  const boardMatchChecked = useRef(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState<'waiting' | 'recording' | 'paused'>('waiting');
   const [recordingEvents, setRecordingEvents] = useState<MouseEventData[]>([]);
@@ -117,16 +123,50 @@ export default function App() {
       recordingStartedAt.current = Date.now();
       recordingEventsRef.current = [];
       recordingSaveStatusRef.current = 'completed';
+      boardMatchChecked.current = false;
+      setPatternAlert(null);
       setElapsedMs(0);
       setRecordingEvents([]);
       setRecordingStatus('recording');
       setSection('browser');
       ping('Permainan dimulai. Rekaman mouse otomatis berjalan.');
     }).then((stop) => { if (active) unlistenStart = stop; else stop(); });
-    void listen<Omit<MouseEventData, 'elapsed_ms'> & { type: 'move' | 'click' }>('recording-input', (event) => {
+    void listen<Omit<MouseEventData, 'elapsed_ms'> & { type: 'move' | 'click' | 'board' }>('recording-input', async (event) => {
       if (!active || recordingStartedAt.current === null) return;
       const elapsed = accumulatedMs.current + Date.now() - recordingStartedAt.current;
-      const nextEvents = [...recordingEventsRef.current, { ...event.payload, elapsed_ms: Math.round(elapsed) }];
+      const payload = event.payload;
+      if (payload.type === 'board') {
+        const snapshot = decodeBoard(payload.label);
+        if (snapshot && snapshot.cards.length > 0 && !boardMatchChecked.current && db && session) {
+          boardMatchChecked.current = true;
+          const { data } = await db.from('game_mouse_recordings')
+            .select('id,title,status,events,recorded_at')
+            .eq('user_id', session.user.id)
+            .order('recorded_at', { ascending: false }).limit(250);
+          if (!active) return;
+          const match = (data || []).map((row: any) => {
+            const savedEvents = Array.isArray(row.events) ? row.events as MouseEventData[] : [];
+            const savedBoard = [...savedEvents].reverse().find((item) => item.type === 'board');
+            return { row, savedEvents, savedBoard: decodeBoard(savedBoard?.label) };
+          }).find((item) => item.savedBoard?.signature === snapshot.signature);
+          if (match) {
+            const steps = match.savedEvents.filter((item) => item.type === 'click' && item.label)
+              .slice(0, 16).map((item, index) => `Langkah ${index + 1}: ${item.label}`);
+            setPatternAlert({
+              status: match.row.status,
+              title: match.row.title,
+              cards: snapshot.cards,
+              steps
+            });
+            ping(match.row.status === 'completed'
+              ? 'Pola permainan cocok dengan rekaman yang sudah selesai.'
+              : 'Pola permainan cocok dengan rekaman yang belum selesai.');
+          } else {
+            ping('Pola baru terdeteksi. Permainan akan direkam seperti biasa.');
+          }
+        }
+      }
+      const nextEvents = [...recordingEventsRef.current, { ...payload, x: payload.x ?? 0, y: payload.y ?? 0, elapsed_ms: Math.round(elapsed) }];
       recordingEventsRef.current = nextEvents;
       setRecordingEvents(nextEvents);
     }).then((stop) => { if (active) unlistenInput = stop; else stop(); });
@@ -301,8 +341,9 @@ export default function App() {
           ) : isSuperAdmin ? <AdminPanel db={db} session={session} ping={ping} /> : <div className="empty-state"><Shield size={24}/><b>Akses ditolak</b><span>Menu ini hanya tersedia untuk Super Admin.</span></div>}
         </div>
       </main>
-      {selectedRecord && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedRecord(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">DETAIL REKAMAN</div><h2>{selectedRecord.title}</h2></div><button className="icon-button" onClick={() => setSelectedRecord(null)} aria-label="Tutup"><X size={19}/></button></div><div className="record-detail-summary"><div><span>Durasi aktif</span><b>{formatDuration(selectedRecord.duration_ms)}</b></div><div><span>Total aktivitas</span><b>{selectedRecord.event_count.toLocaleString('id-ID')}</b></div></div><div className="record-event-list">{detailLoading ? <div className="empty-state"><LoaderCircle className="spin" size={22}/>Memuat detail rekaman...</div> : <><div className="record-event-head"><b>Urutan aktivitas mouse</b><span>Menampilkan maksimal 200 aktivitas pertama</span></div>{(selectedRecord.events || []).slice(0, 200).map((event, index) => <div className="record-event-row" key={index}><span>{index + 1}</span><b>{event.type === 'move' ? 'Gerak' : 'Klik'}</b><span>{formatDuration(event.elapsed_ms)}</span><span>X: {Math.round(event.x)} · Y: {Math.round(event.y)}</span>{event.type === 'click' && <small>{event.button === 2 ? 'Klik kanan' : 'Klik kiri'}</small>}</div>)}</>}</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSelectedRecord(null)}>Tutup</button></div></section></div>}
+      {selectedRecord && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedRecord(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">DETAIL REKAMAN</div><h2>{selectedRecord.title}</h2></div><button className="icon-button" onClick={() => setSelectedRecord(null)} aria-label="Tutup"><X size={19}/></button></div><div className="record-detail-summary"><div><span>Durasi aktif</span><b>{formatDuration(selectedRecord.duration_ms)}</b></div><div><span>Total aktivitas</span><b>{selectedRecord.event_count.toLocaleString('id-ID')}</b></div></div><div className="record-event-list">{detailLoading ? <div className="empty-state"><LoaderCircle className="spin" size={22}/>Memuat detail rekaman...</div> : <><div className="record-event-head"><b>Urutan aktivitas mouse</b><span>Menampilkan maksimal 200 aktivitas pertama</span></div>{(selectedRecord.events || []).slice(0, 200).map((event, index) => <div className="record-event-row" key={index}><span>{index + 1}</span><b>{event.type === 'move' ? 'Gerak' : event.type === 'board' ? 'Pola kartu' : 'Klik'}</b><span>{formatDuration(event.elapsed_ms)}</span>{event.type === 'board' ? <span>{decodeBoard(event.label)?.cards.length || 0} elemen kartu terdeteksi</span> : <span>X: {Math.round(event.x)} · Y: {Math.round(event.y)}</span>}{event.type === 'click' && <small>{event.label || (event.button === 2 ? 'Klik kanan' : 'Klik kiri')}</small>}</div>)}</>}</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSelectedRecord(null)}>Tutup</button></div></section></div>}
       {settingsOpen && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section className="settings-modal"><div className="modal-head"><div><div className="eyebrow">KONFIGURASI</div><h2>Pengaturan Website</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Tutup"><X size={19}/></button></div><p className="modal-copy">Tentukan alamat website yang akan dibuka pada browser internal GAME.</p><label className="field-label" htmlFor="target-url">URL Website Tujuan</label><input id="target-url" className="url-input" value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://contoh.com" onKeyDown={(e) => { if (e.key === 'Enter') void saveSettings(); }}/><div className="field-hint"><ShieldCheck size={14}/> Gunakan alamat lengkap dengan https:// atau http://</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSettingsOpen(false)}>Batal</button><button className="button button-primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} Simpan Pengaturan</button></div></section></div>}
+      {patternAlert && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPatternAlert(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">POLA PERMAINAN DITEMUKAN</div><h2>{patternAlert.status === 'completed' ? 'Pola pernah diselesaikan' : 'Pola pernah dimainkan'}</h2></div><button className="icon-button" onClick={() => setPatternAlert(null)} aria-label="Tutup"><X size={19}/></button></div><p className="modal-copy">Susunan kartu cocok dengan rekaman <b>{patternAlert.title}</b> pada menu Buka Data → {patternAlert.status === 'completed' ? 'Selesai' : 'Belum Selesai'}.</p>{patternAlert.status === 'completed' ? <><h3>Panduan langkah dari rekaman</h3>{patternAlert.steps.length ? <ol>{patternAlert.steps.map((step, index) => <li key={index}>{step}</li>)}</ol> : <p>Rekaman cocok, tetapi label langkah lama belum tersedia. Buka detail rekaman untuk melihat aktivitas yang tersimpan.</p>}</> : <><h3>Informasi kartu pada pola</h3><p>{patternAlert.cards.filter((card) => !card.faceUp).length} kartu masih tertutup/tidak terbaca dari pola ini.</p><ul>{patternAlert.cards.filter((card) => !card.faceUp).slice(0, 20).map((card, index) => <li key={index}>Posisi {card.slot}: kartu belum terbuka</li>)}</ul><p>Kartu tertutup hanya akan diberi identitas jika pernah terbuka dan terekam pada pola yang sama.</p></>}<div className="modal-actions"><button className="button button-primary" onClick={() => setPatternAlert(null)}>Mengerti</button></div></section></div>}
       {notice && <div className="toast"><Check size={16}/>{notice}</div>}
     </div>
   );
