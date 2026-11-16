@@ -141,7 +141,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const target = event.target;
     const control = target instanceof Element ? target.closest('button,[role="button"],a,[tabindex]') : null;
     const label = control ? labelOf(control).slice(0, 120) : '';
-    if (!started && isStartControl(target)) {
+    if (isStartControl(target)) {
       started = true;
       void send('start', { x: event.clientX, y: event.clientY, button: event.button, label })
         .then(() => send('click', { x: event.clientX, y: event.clientY, button: event.button, label }));
