@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "solitaire-recording-remote",
+  "description": "Allow only the specified Solitaire game page to send mouse-recording events to GAME. No filesystem, shell, or window-management permissions are granted.",
+  "webviews": ["game-browser"],
+  "remote": {
+    "urls": ["https://1xlite-6487.com/en/games/solitaire*"]
+  },
+  "permissions": ["app:allow-recording-event"]
+}
