@@ -20,3 +20,6 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local`. Without th
 ## Important browser limitation
 
 The Rekam view uses an iframe when the target site permits embedding. Some sites prohibit framing with `X-Frame-Options` or Content Security Policy; the app then offers to open the target in a normal browser tab. It does not bypass those site security controls.
+## Data access note before public deployment
+
+The current starter migration grants anonymous browser access to the shared settings and records tables so the no-login prototype can work. This means anyone who can reach the deployed app (or its public Supabase API) may read or change the shared target URL and records. Do not use this access model for private or sensitive data. Before public deployment, replace the anonymous write access with a server-side protected endpoint or choose an authentication/access-control design.
