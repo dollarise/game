@@ -180,7 +180,7 @@ export default function App() {
         </header>
         <div className="content">
           {section === 'browser' ? (
-            <BrowserFrame url={targetUrl} onNavigate={navigateTarget} onSave={saveRecordForUrl}/>
+            <BrowserFrame url={targetUrl} onNavigate={navigateTarget} onSave={saveRecordForUrl} suspend={settingsOpen}/>
           ) : section === 'data' ? (
             <>
               <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Daftar alamat website yang pernah Anda rekam.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Buka Website</button></div>
@@ -319,7 +319,7 @@ async function ensureDesktopBrowser(url: string): Promise<Webview> {
   }
 }
 
-function BrowserFrame({ url, onNavigate, onSave }: { url: string; onNavigate: (url: string) => void; onSave: (url: string) => void }) {
+function BrowserFrame({ url, onNavigate, onSave, suspend }: { url: string; onNavigate: (url: string) => void; onSave: (url: string) => void; suspend: boolean }) {
   const desktop = isTauri();
   const [address, setAddress] = useState(url);
   const [currentUrl, setCurrentUrl] = useState(url);
@@ -344,6 +344,21 @@ function BrowserFrame({ url, onNavigate, onSave }: { url: string; onNavigate: (u
       }
     }
   }, [url, desktop]);
+
+  useEffect(() => {
+    if (!desktop || !viewRef.current) return;
+    if (suspend) {
+      void viewRef.current.hide();
+    } else {
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (rect && rect.width > 1 && rect.height > 1) {
+        void viewRef.current.setPosition(new LogicalPosition(Math.max(0, rect.left), Math.max(0, rect.top)))
+          .then(() => viewRef.current?.setSize(new LogicalSize(rect.width, rect.height)))
+          .then(() => viewRef.current?.show())
+          .catch((error) => setNativeError(String(error)));
+      }
+    }
+  }, [desktop, suspend]);
 
   useEffect(() => {
     if (!desktop) return;
