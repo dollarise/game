@@ -115,18 +115,7 @@ export default function App() {
     if (!db) localStorage.setItem('game.records', JSON.stringify(next));
   }
 
-  async function saveRecord() {
-    const record = { user_id: session!.user.id, title: new URL(targetUrl).hostname, url: targetUrl, recorded_at: new Date().toISOString() };
-    if (db) {
-      const { data, error } = await db.from('game_records').insert(record).select('id,title,url,recorded_at').single();
-      if (error) { ping('Gagal menyimpan data: ' + error.message); return; }
-      setRecords((old) => [data as SavedRecord, ...old]);
-    } else {
-      const local: SavedRecord = { ...record, id: crypto.randomUUID() };
-      const next = [local, ...readLocalRecords()];
-      localStorage.setItem('game.records', JSON.stringify(next)); setRecords(next);
-    }
-  }
+
 
   async function navigateTarget(nextUrl: string) {
     setTargetUrl(nextUrl);
@@ -192,7 +181,7 @@ export default function App() {
               <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Daftar alamat website yang pernah Anda rekam.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Buka Website</button></div>
               <div className="data-summary"><div className="summary-icon"><BookmarkPlus size={19}/></div><div><span>Total data tersimpan</span><b>{records.length} <small>alamat</small></b></div><div className="summary-divider"/><div className="summary-meta"><span>Terakhir diperbarui</span><b>{records[0] ? new Date(records[0].recorded_at).toLocaleString('id-ID') : 'Belum ada data'}</b></div></div>
               <div className="data-panel"><div className="panel-heading"><div><h2>Data Terekam</h2><span>Semua alamat website yang tersimpan</span></div><div className="search-box"><Search size={16}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari data..."/></div></div>
-                {loading ? <div className="empty-state"><LoaderCircle className="spin" size={25}/><span>Memuat data...</span></div> : filteredRecords.length === 0 ? <div className="empty-state"><div className="empty-icon"><HardDrive size={23}/></div><b>{search ? 'Data tidak ditemukan' : 'Belum ada data terekam'}</b><span>{search ? 'Coba kata kunci lain.' : 'Klik menu Rekam untuk membuka website tujuan.'}</span>{!search && <button className="button button-primary" onClick={openTarget}>Buka Website</button>}</div> :
+                {loading ? <div className="empty-state"><LoaderCircle className="spin" size={25}/><span>Memuat data...</span></div> : filteredRecords.length === 0 ? <div className="empty-state"><div className="empty-icon"><HardDrive size={23}/></div><b>{search ? 'Data tidak ditemukan' : 'Belum ada data terekam'}</b><span>{search ? 'Coba kata kunci lain.' : 'Klik menu Rekam untuk membuka website tujuan.'}</span>{!search && <button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}>Buka Website</button>}</div> :
                 <div className="record-list">{filteredRecords.map((item) => <div className="record-row" key={item.id}><div className="record-site-icon"><Globe2 size={18}/></div><div className="record-main"><b>{item.title}</b><a href={item.url} target="_blank" rel="noreferrer">{item.url}</a></div><div className="record-time"><Clock3 size={14}/>{new Date(item.recorded_at).toLocaleString('id-ID')}</div><button className="icon-button" onClick={() => window.open(item.url, '_blank', 'noopener,noreferrer')} title="Buka website"><ArrowUpRight size={17}/></button><button className="icon-button danger-hover" onClick={() => void deleteRecord(item.id)} title="Hapus data"><Trash2 size={16}/></button></div>)}</div>}
               </div>
             </>
