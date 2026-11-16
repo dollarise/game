@@ -43,7 +43,7 @@ fn main() {
 
             let window = app
                 .get_webview_window("main")
-                .ok_or("Jendela utama GAME tidak ditemukan.")?;
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Jendela utama GAME tidak ditemukan."))?;
             let start_url = url::Url::parse("https://1xlite-6487.com/")?;
             let browser = WebviewBuilder::new(
                 "game-browser",
