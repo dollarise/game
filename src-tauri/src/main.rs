@@ -42,7 +42,7 @@ fn main() {
             std::fs::create_dir_all(&profile_dir)?;
 
             let window = app
-                .get_webview_window("main")
+                .get_window("main")
                 .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Jendela utama GAME tidak ditemukan."))?;
             let start_url = url::Url::parse("https://1xlite-6487.com/")?;
             let browser = WebviewBuilder::new(
