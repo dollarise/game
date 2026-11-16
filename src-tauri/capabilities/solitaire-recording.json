@@ -7,5 +7,5 @@
   "remote": {
     "urls": ["https://1xlite-6487.com/*"]
   },
-  "permissions": ["app:allow-recording-event"]
+  "permissions": ["allow-recording-event"]
 }
