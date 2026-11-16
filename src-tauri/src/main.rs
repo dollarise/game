@@ -89,6 +89,7 @@ fn recording_event(
     match event_type.as_str() {
         "start" => app.emit("recording-auto-start", ()).map_err(|error| error.to_string()),
         "give_up" => app.emit("recording-auto-stop", ()).map_err(|error| error.to_string()),
+        "auto_build" => app.emit("recording-auto-complete", ()).map_err(|error| error.to_string()),
         "move" | "click" => app.emit("recording-input", RecordingInput {
             kind: event_type.clone(),
             x,
@@ -147,6 +148,13 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg')) + ' ' + labelOf(control.querySelector('img'))).toLowerCase();
     return /\b(play|start|new game|play now)\b/.test(description);
   };
+  const isAutoBuildControl = (target) => {
+    if (!(target instanceof Element)) return false;
+    const control = target.closest('button,[role="button"],a,[tabindex]');
+    if (!control) return false;
+    const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg')) + ' ' + labelOf(control.querySelector('img'))).toLowerCase();
+    return /\bauto\s*build\b/.test(description);
+  };
   const isGiveUpControl = (target) => {
     if (!(target instanceof Element)) return false;
     const control = target.closest('button,[role="button"],a,[tabindex]');
@@ -168,6 +176,12 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     // Give up may be clicked inside a separate game iframe, whose local
     // recording flag was never set by the frame that detected Play/Start.
     // Detect this explicit button click independently of that local flag.
+    if (isAutoBuildControl(target)) {
+      if (started) void send('click', input);
+      started = false;
+      void send('auto_build', input);
+      return;
+    }
     if (isGiveUpControl(target)) {
       if (started) void send('click', input);
       started = false;
