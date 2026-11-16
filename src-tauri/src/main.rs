@@ -220,7 +220,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       const code = cardCodeOf(raw);
       const faceDown = /back|covered|hidden|face[\s_-]*down|card[\s_-]*back/i.test(raw);
       if (!code && !faceDown && !/card/i.test(raw)) continue;
-      candidates.push({ root, rect, raw, code: code || (faceDown ? 'BACK' : 'UNKNOWN'), faceUp: !!code });
+      candidates.push({ root, rect, raw, code: code || (faceDown ? 'BACK' : 'UNKNOWN'), faceUp: !!code && !faceDown });
     }
     if (!candidates.length) return;
 
@@ -228,7 +228,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     // not from raw screen pixels. Keep top-row piles separate from tableau.
     const minY = Math.min(...candidates.map((item) => item.rect.top));
     const maxY = Math.max(...candidates.map((item) => item.rect.bottom));
-    const splitY = minY + (maxY - minY) * 0.34;
+    const splitY = minY + (maxY - minY) * 0.25;
     const groups = new Map();
     for (const item of candidates) {
       const zone = item.rect.top + item.rect.height / 2 < splitY ? 'top' : 'tableau';
