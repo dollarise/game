@@ -33,6 +33,24 @@ fn browser_reload(app: AppHandle) -> Result<(), String> {
     browser_view(&app)?.reload().map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn browser_set_bounds(app: AppHandle, x: f64, y: f64, width: f64, height: f64) -> Result<(), String> {
+    let view = browser_view(&app)?;
+    view.set_position(tauri::LogicalPosition::new(x, y)).map_err(|error| error.to_string())?;
+    view.set_size(tauri::LogicalSize::new(width, height)).map_err(|error| error.to_string())?;
+    view.show().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn browser_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+    let view = browser_view(&app)?;
+    if visible {
+        view.show().map_err(|error| error.to_string())
+    } else {
+        view.hide().map_err(|error| error.to_string())
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -69,7 +87,9 @@ fn main() {
             browser_navigate,
             browser_back,
             browser_forward,
-            browser_reload
+            browser_reload,
+            browser_set_bounds,
+            browser_set_visible
         ])
         .run(tauri::generate_context!())
         .expect("Gagal menjalankan GAME Desktop");
