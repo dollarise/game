@@ -384,6 +384,21 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
 
   useEffect(() => {
     if (!desktop) return;
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void listen<string>('browser-url-changed', (event) => {
+      if (!active || !validUrl(event.payload)) return;
+      const nextUrl = new URL(event.payload).toString();
+      setAddress(nextUrl);
+      setCurrentUrl(nextUrl);
+      lastPropUrl.current = nextUrl;
+      onNavigate(nextUrl);
+    }).then((stop) => { if (active) unlisten = stop; else stop(); });
+    return () => { active = false; unlisten?.(); };
+  }, [desktop, onNavigate]);
+
+  useEffect(() => {
+    if (!desktop) return;
     let disposed = false;
     let observer: ResizeObserver | null = null;
     const syncBounds = async () => {
