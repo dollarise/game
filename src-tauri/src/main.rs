@@ -89,7 +89,7 @@ fn recording_event(
     match event_type.as_str() {
         "start" => app.emit("recording-auto-start", ()).map_err(|error| error.to_string()),
         "move" | "click" => app.emit("recording-input", RecordingInput {
-            kind: event_type,
+            kind: event_type.clone(),
             x,
             y,
             button,
@@ -105,8 +105,8 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       !location.pathname.startsWith('/en/games/solitaire') ||
       window.__GAME_MOUSE_RECORDING_INSTALLED__) return;
   window.__GAME_MOUSE_RECORDING_INSTALLED__ = true;
-  const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
-  if (typeof invoke !== 'function') return;
+  if (!window.__TAURI_INTERNALS__ || typeof window.__TAURI_INTERNALS__.invoke !== 'function') return;
+  const invoke = (...args) => window.__TAURI_INTERNALS__.invoke(...args);
   let started = false;
   let lastMoveAt = 0;
   let lastX = -10000;
@@ -151,6 +151,12 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     }
     if (started) void send('click', { x: event.clientX, y: event.clientY, button: event.button, label });
   }, true);
+  document.addEventListener('pointerdown', (event) => {
+    if (!started || event.button === 0) return;
+    const target = event.target;
+    const control = target instanceof Element ? target.closest('button,[role="button"],a,[tabindex]') : null;
+    void send('click', { x: event.clientX, y: event.clientY, button: event.button, label: control ? labelOf(control).slice(0, 120) : '' });
+  }, { capture: true, passive: true });
   document.addEventListener('pointermove', (event) => {
     if (!started) return;
     const now = performance.now();
