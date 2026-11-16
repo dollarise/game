@@ -51,6 +51,122 @@ fn browser_set_visible(app: AppHandle, visible: bool) -> Result<(), String> {
     }
 }
 
+
+#[derive(Clone, serde::Serialize)]
+struct RecordingInput {
+    #[serde(rename = "type")]
+    kind: String,
+    x: Option<f64>,
+    y: Option<f64>,
+    button: Option<i32>,
+    label: Option<String>,
+}
+
+#[tauri::command]
+fn recording_event(
+    webview: Webview,
+    app: AppHandle,
+    event_type: String,
+    x: Option<f64>,
+    y: Option<f64>,
+    button: Option<i32>,
+    page_url: String,
+    label: Option<String>,
+) -> Result<(), String> {
+    if webview.label() != "game-browser" {
+        return Err("Peristiwa rekaman hanya diterima dari browser GAME.".to_string());
+    }
+    let current = webview.url().map_err(|error| error.to_string())?;
+    let page = url::Url::parse(&page_url).map_err(|error| error.to_string())?;
+    let allowed = |parsed: &url::Url| {
+        parsed.scheme() == "https"
+            && parsed.host_str() == Some("1xlite-6487.com")
+            && parsed.path().starts_with("/en/games/solitaire")
+    };
+    if !allowed(&current) || !allowed(&page) {
+        return Err("Perekaman hanya diizinkan pada halaman Solitaire yang ditentukan.".to_string());
+    }
+    match event_type.as_str() {
+        "start" => app.emit("recording-auto-start", ()).map_err(|error| error.to_string()),
+        "move" | "click" => app.emit("recording-input", RecordingInput {
+            kind: event_type.clone(),
+            x,
+            y,
+            button,
+            label,
+        }).map_err(|error| error.to_string()),
+        _ => Err("Jenis aktivitas rekaman tidak dikenal.".to_string()),
+    }
+}
+
+const MOUSE_RECORDING_SCRIPT: &str = r#"
+(() => {
+  if (window.top !== window || location.hostname !== '1xlite-6487.com' ||
+      !location.pathname.startsWith('/en/games/solitaire') ||
+      window.__GAME_MOUSE_RECORDING_INSTALLED__) return;
+  window.__GAME_MOUSE_RECORDING_INSTALLED__ = true;
+  if (!window.__TAURI_INTERNALS__ || typeof window.__TAURI_INTERNALS__.invoke !== 'function') return;
+  const invoke = (...args) => window.__TAURI_INTERNALS__.invoke(...args);
+  let started = false;
+  let lastMoveAt = 0;
+  let lastX = -10000;
+  let lastY = -10000;
+  const send = (eventType, data = {}) => invoke('recording_event', {
+    eventType,
+    x: Number.isFinite(data.x) ? data.x : null,
+    y: Number.isFinite(data.y) ? data.y : null,
+    button: Number.isInteger(data.button) ? data.button : null,
+    pageUrl: location.href,
+    label: data.label || null
+  }).catch(() => undefined);
+  const labelOf = (element) => {
+    if (!(element instanceof Element)) return '';
+    return [
+      element.textContent,
+      element.getAttribute('aria-label'),
+      element.getAttribute('title'),
+      element.getAttribute('data-testid'),
+      element.getAttribute('data-icon'),
+      element.getAttribute('data-lucide'),
+      element.getAttribute('class'),
+      element.className && typeof element.className === 'string' ? element.className : ''
+    ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  };
+  const isStartControl = (target) => {
+    if (!(target instanceof Element)) return false;
+    const control = target.closest('button,[role="button"],a,[tabindex]');
+    if (!control) return false;
+    const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg'))).toLowerCase();
+    return /\b(play|start|new game|play now)\b/.test(description);
+  };
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    const control = target instanceof Element ? target.closest('button,[role="button"],a,[tabindex]') : null;
+    const label = control ? labelOf(control).slice(0, 120) : '';
+    if (isStartControl(target)) {
+      started = true;
+      void send('start', { x: event.clientX, y: event.clientY, button: event.button, label })
+        .then(() => send('click', { x: event.clientX, y: event.clientY, button: event.button, label }));
+      return;
+    }
+    if (started) void send('click', { x: event.clientX, y: event.clientY, button: event.button, label });
+  }, true);
+  document.addEventListener('pointerdown', (event) => {
+    if (!started || event.button === 0) return;
+    const target = event.target;
+    const control = target instanceof Element ? target.closest('button,[role="button"],a,[tabindex]') : null;
+    void send('click', { x: event.clientX, y: event.clientY, button: event.button, label: control ? labelOf(control).slice(0, 120) : '' });
+  }, { capture: true, passive: true });
+  document.addEventListener('pointermove', (event) => {
+    if (!started) return;
+    const now = performance.now();
+    if (now - lastMoveAt < 35 || (Math.abs(event.clientX - lastX) < 2 && Math.abs(event.clientY - lastY) < 2)) return;
+    lastMoveAt = now; lastX = event.clientX; lastY = event.clientY;
+    void send('move', { x: event.clientX, y: event.clientY });
+  }, { capture: true, passive: true });
+})();
+"#;
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -62,12 +178,13 @@ fn main() {
             let window = app
                 .get_window("main")
                 .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Jendela utama GAME tidak ditemukan."))?;
-            let start_url = url::Url::parse("https://1xlite-6487.com/")?;
+            let start_url = url::Url::parse("https://1xlite-6487.com/en/games/solitaire")?;
             let browser = WebviewBuilder::new(
                 "game-browser",
                 WebviewUrl::External(start_url),
             )
-            .data_directory(profile_dir);
+            .data_directory(profile_dir)
+            .initialization_script(MOUSE_RECORDING_SCRIPT);
 
             window.add_child(
                 browser,
@@ -89,7 +206,8 @@ fn main() {
             browser_forward,
             browser_reload,
             browser_set_bounds,
-            browser_set_visible
+            browser_set_visible,
+            recording_event
         ])
         .run(tauri::generate_context!())
         .expect("Gagal menjalankan GAME Desktop");
