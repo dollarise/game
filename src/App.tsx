@@ -4,36 +4,34 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import {
-  ArrowLeft, ArrowRight, ArrowUpRight, BookmarkPlus, Check, ChevronDown, Clock3,
+  ArrowLeft, ArrowRight, BookmarkPlus, Check, ChevronDown, Clock3,
   Globe2, HardDrive, LoaderCircle, Menu,
   LogOut, MonitorPlay, Plus, RefreshCw, Search, Settings2,
-  ShieldCheck, Trash2, X, Users, UserPlus, Shield
+  ShieldCheck, Trash2, X, Users, UserPlus, Shield, Pause, Play, Square
 } from 'lucide-react';
 
 type Section = 'browser' | 'data' | 'admin';
-type SavedRecord = { id: string; title: string; url: string; recorded_at: string };
+type MouseEventData = { type: 'move' | 'click'; x: number; y: number; button?: number; elapsed_ms: number; label?: string };
+type SavedRecord = { id: string; title: string; duration_ms: number; event_count: number; events: MouseEventData[]; recorded_at: string };
 
-const DEFAULT_URL = 'https://1xlite-6487.com/';
+const DEFAULT_URL = 'https://1xlite-6487.com/en/games/solitaire';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-// Supabase Auth is the source of truth for accounts and sessions.
-// Keep the SDK's default storage key stable so existing signed-in users
-// remain signed in after an application upgrade.
 const db: SupabaseClient | null = supabaseUrl && supabaseKey
- ? createClient(supabaseUrl, supabaseKey, {
-     auth: {
-       persistSession: true,
-       autoRefreshToken: true,
-       detectSessionInUrl: true,
-     },
-   })
+ ? createClient(supabaseUrl, supabaseKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
  : null;
 
 function validUrl(value: string) {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
-  } catch { return false; }
+  try { const parsed = new URL(value); return parsed.protocol === 'https:' || parsed.protocol === 'http:'; }
+  catch { return false; }
+}
+
+function formatDuration(milliseconds: number) {
+  const total = Math.floor(Math.max(0, milliseconds) / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
 }
 
 export default function App() {
@@ -43,23 +41,26 @@ export default function App() {
   const [targetUrl, setTargetUrl] = useState(DEFAULT_URL);
   const [urlDraft, setUrlDraft] = useState(DEFAULT_URL);
   const [records, setRecords] = useState<SavedRecord[]>([]);
+  const [selectedRecord, setSelectedRecord] = useState<SavedRecord | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingRecord, setSavingRecord] = useState(false);
   const [search, setSearch] = useState('');
   const [notice, setNotice] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
+  const [recordingStatus, setRecordingStatus] = useState<'waiting' | 'recording' | 'paused'>('waiting');
+  const [recordingEvents, setRecordingEvents] = useState<MouseEventData[]>([]);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const recordingStartedAt = useRef<number | null>(null);
+  const accumulatedMs = useRef(0);
   const isSuperAdmin = session?.user.app_metadata?.role === 'super_admin';
 
   useEffect(() => {
     if (!db) { setAuthReady(true); setLoading(false); return; }
     let active = true;
-    db.auth.getSession().then(({ data }) => {
-      if (active) { setSession(data.session); setAuthReady(true); }
-    });
-    const { data: listener } = db.auth.onAuthStateChange((_event, nextSession) => {
-      if (active) setSession(nextSession);
-    });
+    db.auth.getSession().then(({ data }) => { if (active) { setSession(data.session); setAuthReady(true); } });
+    const { data: listener } = db.auth.onAuthStateChange((_event, nextSession) => { if (active) setSession(nextSession); });
     return () => { active = false; listener.subscription.unsubscribe(); };
   }, []);
 
@@ -70,15 +71,13 @@ export default function App() {
       setLoading(true);
       const [{ data: setting, error: settingError }, { data: rows, error: rowsError }] = await Promise.all([
         db!.from('game_settings').select('target_url').eq('user_id', session!.user.id).maybeSingle(),
-        db!.from('game_records').select('id,title,url,recorded_at').eq('user_id', session!.user.id).order('recorded_at', { ascending: false }).limit(250),
+        db!.from('game_mouse_recordings').select('id,title,duration_ms,event_count,events,recorded_at').eq('user_id', session!.user.id).order('recorded_at', { ascending: false }).limit(250),
       ]);
       if (!active) return;
       if (settingError || rowsError) ping('Gagal memuat data akun: ' + (settingError?.message || rowsError?.message));
-      if (setting?.target_url && validUrl(setting.target_url)) {
-        setTargetUrl(setting.target_url); setUrlDraft(setting.target_url);
-      } else {
-        const initial = { user_id: session!.user.id, target_url: DEFAULT_URL };
-        const { error } = await db!.from('game_settings').upsert(initial, { onConflict: 'user_id' });
+      if (setting?.target_url && validUrl(setting.target_url)) { setTargetUrl(setting.target_url); setUrlDraft(setting.target_url); }
+      else {
+        const { error } = await db!.from('game_settings').upsert({ user_id: session!.user.id, target_url: DEFAULT_URL }, { onConflict: 'user_id' });
         if (error) ping('Gagal membuat pengaturan akun: ' + error.message);
         setTargetUrl(DEFAULT_URL); setUrlDraft(DEFAULT_URL);
       }
@@ -89,13 +88,44 @@ export default function App() {
     return () => { active = false; };
   }, [session?.user.id]);
 
+  useEffect(() => {
+    if (recordingStatus !== 'recording') return;
+    const timer = window.setInterval(() => {
+      const current = recordingStartedAt.current;
+      setElapsedMs(accumulatedMs.current + (current === null ? 0 : Date.now() - current));
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [recordingStatus]);
+
+  useEffect(() => {
+    let active = true;
+    let unlistenStart: (() => void) | undefined;
+    let unlistenInput: (() => void) | undefined;
+    void listen('recording-auto-start', () => {
+      if (!active) return;
+      accumulatedMs.current = 0;
+      recordingStartedAt.current = Date.now();
+      setElapsedMs(0);
+      setRecordingEvents([]);
+      setRecordingStatus('recording');
+      setSection('browser');
+      ping('Permainan dimulai. Rekaman mouse otomatis berjalan.');
+    }).then((stop) => { if (active) unlistenStart = stop; else stop(); });
+    void listen<Omit<MouseEventData, 'elapsed_ms'> & { type: 'move' | 'click' }>('recording-input', (event) => {
+      if (!active || recordingStartedAt.current === null) return;
+      const elapsed = accumulatedMs.current + Date.now() - recordingStartedAt.current;
+      setRecordingEvents((old) => [...old, { ...event.payload, elapsed_ms: Math.round(elapsed) }]);
+    }).then((stop) => { if (active) unlistenInput = stop; else stop(); });
+    return () => { active = false; unlistenStart?.(); unlistenInput?.(); };
+  }, []);
+
   const filteredRecords = useMemo(() => records.filter((item) =>
-    (item.title + ' ' + item.url).toLowerCase().includes(search.toLowerCase())
+    (item.title + ' ' + new Date(item.recorded_at).toLocaleString('id-ID')).toLowerCase().includes(search.toLowerCase())
   ), [records, search]);
 
   function ping(message: string) {
     setNotice(message);
-    window.setTimeout(() => setNotice(''), 2800);
+    window.setTimeout(() => setNotice(''), 3200);
   }
 
   async function saveSettings() {
@@ -104,22 +134,21 @@ export default function App() {
     const next = new URL(urlDraft.trim()).toString();
     if (db) {
       const { error } = await db.from('game_settings').upsert({ user_id: session!.user.id, target_url: next, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-      if (error) { setSaving(false); ping('Gagal menyimpan ke database: ' + error.message); return; }
+      if (error) { setSaving(false); ping('Gagal menyimpan pengaturan: ' + error.message); return; }
     }
     setTargetUrl(next); setUrlDraft(next); setSaving(false); setSettingsOpen(false);
-    ping('Alamat website berhasil disimpan.');
+    ping('Pengaturan website berhasil disimpan.');
   }
 
   async function deleteRecord(id: string) {
     if (db) {
-      const { error } = await db.from('game_records').delete().eq('id', id);
-      if (error) { ping('Gagal menghapus: ' + error.message); return; }
+      const { error } = await db.from('game_mouse_recordings').delete().eq('id', id);
+      if (error) { ping('Gagal menghapus rekaman: ' + error.message); return; }
     }
-    const next = records.filter((item) => item.id !== id);
-    setRecords(next);
+    setRecords((old) => old.filter((item) => item.id !== id));
+    if (selectedRecord?.id === id) setSelectedRecord(null);
+    ping('Data rekaman berhasil dihapus.');
   }
-
-
 
   async function navigateTarget(nextUrl: string) {
     setTargetUrl(nextUrl);
@@ -130,19 +159,54 @@ export default function App() {
     }
   }
 
-  async function saveRecordForUrl(url: string, showNotice = true) {
-    if (!validUrl(url)) return;
-    const normalizedUrl = new URL(url).toString();
-    const record = { user_id: session!.user.id, title: new URL(normalizedUrl).hostname, url: normalizedUrl, recorded_at: new Date().toISOString() };
-    if (!db) return;
-    const { data, error } = await db.from('game_records').insert(record).select('id,title,url,recorded_at').single();
-    if (error) { if (showNotice) ping('Gagal menyimpan data: ' + error.message); return; }
+  function pauseRecording() {
+    if (recordingStatus !== 'recording' || recordingStartedAt.current === null) return;
+    accumulatedMs.current += Date.now() - recordingStartedAt.current;
+    recordingStartedAt.current = null;
+    setElapsedMs(accumulatedMs.current);
+    setRecordingStatus('paused');
+  }
+
+  function resumeRecording() {
+    if (recordingStatus !== 'paused') return;
+    recordingStartedAt.current = Date.now();
+    setRecordingStatus('recording');
+  }
+
+  async function stopRecording() {
+    if (!db || !session || recordingStatus === 'waiting' || savingRecord) return;
+    if (recordingStartedAt.current !== null) {
+      accumulatedMs.current += Date.now() - recordingStartedAt.current;
+      recordingStartedAt.current = null;
+    }
+    const duration = accumulatedMs.current;
+    const events = recordingEvents;
+    if (events.length === 0) { setRecordingStatus('waiting'); setElapsedMs(0); accumulatedMs.current = 0; ping('Tidak ada aktivitas mouse yang terekam.'); return; }
+    setSavingRecord(true);
+    const recordedAt = new Date().toISOString();
+    const title = 'Solitaire - ' + new Date(recordedAt).toLocaleString('id-ID');
+    const { data, error } = await db.from('game_mouse_recordings')
+      .insert({ user_id: session.user.id, title, duration_ms: Math.round(duration), event_count: events.length, events })
+      .select('id,title,duration_ms,event_count,events,recorded_at').single();
+    setSavingRecord(false);
+    if (error) {
+      setRecordingStatus('paused');
+      setElapsedMs(duration);
+      ping('Gagal menyimpan rekaman. Data masih tersedia; tekan Stop lagi untuk mencoba: ' + error.message);
+      return;
+    }
     setRecords((old) => [data as SavedRecord, ...old]);
-    if (showNotice) ping('Alamat berhasil disimpan ke Buka Data.');
+    setRecordingStatus('waiting');
+    setRecordingEvents([]);
+    setElapsedMs(0);
+    accumulatedMs.current = 0;
+    recordingStartedAt.current = null;
+    ping('Rekaman berhasil disimpan ke Buka Data.');
   }
 
   async function signOut() {
     if (!db) return;
+    if (recordingStatus !== 'waiting') { ping('Selesaikan rekaman dengan Stop sebelum keluar.'); return; }
     const { error } = await db.auth.signOut();
     if (error) ping('Gagal keluar: ' + error.message);
   }
@@ -156,43 +220,45 @@ export default function App() {
         <div className="brand"><div className="brand-mark"><Globe2 size={21} /></div><div><b>GAME</b><span>WEB WORKSPACE</span></div><button className="mobile-close icon-button" onClick={() => setMobileNav(false)} aria-label="Tutup menu"><X size={18}/></button></div>
         <div className="workspace-label">WORKSPACE</div>
         <nav className="side-nav">
-          <button className={section === 'browser' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('browser'); setMobileNav(false); }}><MonitorPlay size={18}/><span>Rekam</span>{section === 'browser' && <span className="nav-dot"/>}</button>
-          <button className={section === 'data' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('data'); setMobileNav(false); }}><HardDrive size={18}/><span>Buka Data</span>{records.length > 0 && <small>{records.length}</small>}</button>
+          <button className={section === 'browser' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('browser'); setMobileNav(false); }}><MonitorPlay size={18}/><span>{recordingStatus === 'recording' ? formatDuration(elapsedMs) : 'Rekam'}</span>{section === 'browser' && <span className="nav-dot"/>}</button>
+          <button className={section === 'data' ? 'nav-item active' : 'nav-item'} onClick={() => { if (recordingStatus !== 'waiting') { ping('Tekan Stop untuk menyimpan rekaman sebelum membuka Buka Data.'); return; } setSection('data'); setMobileNav(false); }}><HardDrive size={18}/><span>Buka Data</span>{records.length > 0 && <small>{records.length}</small>}</button>
           {isSuperAdmin && <button className={section === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('admin'); setMobileNav(false); }}><Users size={18}/><span>Manajemen Pengguna</span>{section === 'admin' && <span className="nav-dot"/>}</button>}
         </nav>
         <div className="sidebar-bottom">
-          <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Konfigurasi website terpusat</span></div></div>
+          <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Rekam aktivitas mouse Solitaire</span></div></div>
           <button className="settings-link" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={17}/> Pengaturan <ChevronDown size={15}/></button>
-          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.1.6</span></div>
+          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.1.7</span></div>
         </div>
       </aside>
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
       <main className="main-area">
         <header className="topbar">
-          <div className="top-left"><button className="icon-button mobile-menu" onClick={() => setMobileNav(true)} aria-label="Buka menu"><Menu size={20}/></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><b>{section === 'browser' ? 'Browser' : section === 'data' ? 'Buka Data' : 'Manajemen Pengguna'}</b></div></div>
+          <div className="top-left"><button className="icon-button mobile-menu" onClick={() => setMobileNav(true)} aria-label="Buka menu"><Menu size={20}/></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><b>{section === 'browser' ? 'Rekam' : section === 'data' ? 'Buka Data' : 'Manajemen Pengguna'}</b></div></div>
           <div className="top-actions"><div className="connection"><span className="status-dot"/>{db ? 'Database aktif' : 'Lokal'}</div><button className="icon-button" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }} aria-label="Pengaturan"><Settings2 size={18}/></button><button className="icon-button" onClick={() => void signOut()} title="Keluar dari aplikasi" aria-label="Keluar"><LogOut size={17}/></button><div className="avatar">{(session.user.email || "U").charAt(0).toUpperCase()}</div></div>
         </header>
         <div className="content">
           {section === 'browser' ? (
-            <BrowserFrame url={targetUrl} onNavigate={navigateTarget} onSave={saveRecordForUrl} onAutoRecord={(url) => saveRecordForUrl(url, false)} suspend={settingsOpen}/>
+            <BrowserFrame url={targetUrl} onNavigate={navigateTarget} suspend={settingsOpen}
+              recordingStatus={recordingStatus} elapsedMs={elapsedMs} eventCount={recordingEvents.length}
+              savingRecord={savingRecord} onPause={pauseRecording} onResume={resumeRecording} onStop={() => void stopRecording()} />
           ) : section === 'data' ? (
             <>
-              <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Daftar alamat website yang pernah Anda rekam.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Buka Website</button></div>
-              <div className="data-summary"><div className="summary-icon"><BookmarkPlus size={19}/></div><div><span>Total data tersimpan</span><b>{records.length} <small>alamat</small></b></div><div className="summary-divider"/><div className="summary-meta"><span>Terakhir diperbarui</span><b>{records[0] ? new Date(records[0].recorded_at).toLocaleString('id-ID') : 'Belum ada data'}</b></div></div>
-              <div className="data-panel"><div className="panel-heading"><div><h2>Data Terekam</h2><span>Semua alamat website yang tersimpan</span></div><div className="search-box"><Search size={16}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari data..."/></div></div>
-                {loading ? <div className="empty-state"><LoaderCircle className="spin" size={25}/><span>Memuat data...</span></div> : filteredRecords.length === 0 ? <div className="empty-state"><div className="empty-icon"><HardDrive size={23}/></div><b>{search ? 'Data tidak ditemukan' : 'Belum ada data terekam'}</b><span>{search ? 'Coba kata kunci lain.' : 'Klik menu Rekam untuk membuka website tujuan.'}</span>{!search && <button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}>Buka Website</button>}</div> :
-                <div className="record-list">{filteredRecords.map((item) => <div className="record-row" key={item.id}><div className="record-site-icon"><Globe2 size={18}/></div><div className="record-main"><b>{item.title}</b><a href={item.url} onClick={(event) => { event.preventDefault(); setSection('browser'); void navigateTarget(item.url); }}>{item.url}</a></div><div className="record-time"><Clock3 size={14}/>{new Date(item.recorded_at).toLocaleString('id-ID')}</div><button className="icon-button" onClick={() => { setSection('browser'); void navigateTarget(item.url); }} title="Buka website di GAME"><ArrowUpRight size={17}/></button><button className="icon-button danger-hover" onClick={() => void deleteRecord(item.id)} title="Hapus data"><Trash2 size={16}/></button></div>)}</div>}
+              <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Seluruh hasil rekaman gerakan dan klik mouse pada Solitaire.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Kembali ke Rekam</button></div>
+              <div className="data-summary"><div className="summary-icon"><BookmarkPlus size={19}/></div><div><span>Total sesi rekaman tersimpan</span><b>{records.length} <small>sesi</small></b></div><div className="summary-divider"/><div className="summary-meta"><span>Rekaman terakhir</span><b>{records[0] ? new Date(records[0].recorded_at).toLocaleString('id-ID') : 'Belum ada data'}</b></div></div>
+              <div className="data-panel"><div className="panel-heading"><div><h2>Rekaman Solitaire</h2><span>Data aktivitas mouse tersimpan per sesi, terpisah untuk setiap akun</span></div><div className="search-box"><Search size={16}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari sesi rekaman..."/></div></div>
+                {loading ? <div className="empty-state"><LoaderCircle className="spin" size={25}/><span>Memuat data...</span></div> : filteredRecords.length === 0 ? <div className="empty-state"><div className="empty-icon"><HardDrive size={23}/></div><b>{search ? 'Data tidak ditemukan' : 'Belum ada rekaman tersimpan'}</b><span>{search ? 'Coba kata kunci lain.' : 'Buka menu Rekam, lalu klik Play / Start Game di dalam Solitaire.'}</span>{!search && <button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}>Buka Rekam</button>}</div> :
+                <div className="record-list">{filteredRecords.map((item) => <div className="record-row" key={item.id}><div className="record-site-icon"><MonitorPlay size={18}/></div><div className="record-main"><b>{item.title}</b><span>{formatDuration(item.duration_ms)} · {item.event_count.toLocaleString('id-ID')} aktivitas mouse</span><small>{new Date(item.recorded_at).toLocaleString('id-ID')}</small></div><button className="button button-secondary" onClick={() => setSelectedRecord(item)} title="Buka data rekaman">Buka Data</button><button className="icon-button danger-hover" onClick={() => void deleteRecord(item.id)} title="Hapus rekaman"><Trash2 size={16}/></button></div>)}</div>}
               </div>
             </>
           ) : isSuperAdmin ? <AdminPanel db={db} session={session} ping={ping} /> : <div className="empty-state"><Shield size={24}/><b>Akses ditolak</b><span>Menu ini hanya tersedia untuk Super Admin.</span></div>}
         </div>
       </main>
-      {settingsOpen && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section className="settings-modal"><div className="modal-head"><div><div className="eyebrow">KONFIGURASI</div><h2>Pengaturan Website</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Tutup"><X size={19}/></button></div><p className="modal-copy">Tentukan alamat website yang akan dibuka pada menu Rekam.</p><label className="field-label" htmlFor="target-url">URL Website Tujuan</label><input id="target-url" className="url-input" value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://contoh.com" onKeyDown={(e) => { if (e.key === 'Enter') void saveSettings(); }}/><div className="field-hint"><ShieldCheck size={14}/> Gunakan alamat lengkap dengan https:// atau http://</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSettingsOpen(false)}>Batal</button><button className="button button-primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} Simpan Pengaturan</button></div></section></div>}
+      {selectedRecord && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedRecord(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">DETAIL REKAMAN</div><h2>{selectedRecord.title}</h2></div><button className="icon-button" onClick={() => setSelectedRecord(null)} aria-label="Tutup"><X size={19}/></button></div><div className="record-detail-summary"><div><span>Durasi aktif</span><b>{formatDuration(selectedRecord.duration_ms)}</b></div><div><span>Total aktivitas</span><b>{selectedRecord.event_count.toLocaleString('id-ID')}</b></div></div><div className="record-event-list"><div className="record-event-head"><b>Urutan aktivitas mouse</b><span>Menampilkan maksimal 200 aktivitas pertama</span></div>{selectedRecord.events.slice(0, 200).map((event, index) => <div className="record-event-row" key={index}><span>{index + 1}</span><b>{event.type === 'move' ? 'Gerak' : 'Klik'}</b><span>{formatDuration(event.elapsed_ms)}</span><span>X: {Math.round(event.x)} · Y: {Math.round(event.y)}</span>{event.type === 'click' && <small>{event.button === 2 ? 'Klik kanan' : 'Klik kiri'}</small>}</div>)}</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSelectedRecord(null)}>Tutup</button></div></section></div>}
+      {settingsOpen && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section className="settings-modal"><div className="modal-head"><div><div className="eyebrow">KONFIGURASI</div><h2>Pengaturan Website</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Tutup"><X size={19}/></button></div><p className="modal-copy">Tentukan alamat website yang akan dibuka pada browser internal GAME.</p><label className="field-label" htmlFor="target-url">URL Website Tujuan</label><input id="target-url" className="url-input" value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://contoh.com" onKeyDown={(e) => { if (e.key === 'Enter') void saveSettings(); }}/><div className="field-hint"><ShieldCheck size={14}/> Gunakan alamat lengkap dengan https:// atau http://</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSettingsOpen(false)}>Batal</button><button className="button button-primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} Simpan Pengaturan</button></div></section></div>}
       {notice && <div className="toast"><Check size={16}/>{notice}</div>}
     </div>
   );
 }
-
 
 type ManagedUser = {
   id: string; email?: string; role: 'user' | 'super_admin';
@@ -273,7 +339,11 @@ function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Sessio
   </section>;
 }
 
-function BrowserFrame({ url, onNavigate, onSave, onAutoRecord, suspend }: { url: string; onNavigate: (url: string) => void; onSave: (url: string) => void; onAutoRecord: (url: string) => void; suspend: boolean }) {
+function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, eventCount, savingRecord, onPause, onResume, onStop }: {
+  url: string; onNavigate: (url: string) => void; suspend: boolean;
+  recordingStatus: 'waiting' | 'recording' | 'paused'; elapsedMs: number; eventCount: number; savingRecord: boolean;
+  onPause: () => void; onResume: () => void; onStop: () => void;
+}) {
   const desktop = isTauri();
   const [address, setAddress] = useState(url);
   const [currentUrl, setCurrentUrl] = useState(url);
@@ -284,157 +354,64 @@ function BrowserFrame({ url, onNavigate, onSave, onAutoRecord, suspend }: { url:
   const [nativeError, setNativeError] = useState('');
   const viewportRef = useRef<HTMLDivElement>(null);
   const lastPropUrl = useRef(url);
-  const lastAutoRecordedUrl = useRef('');
 
   useEffect(() => {
     if (url !== lastPropUrl.current) {
-      lastPropUrl.current = url;
-      setAddress(url);
-      setCurrentUrl(url);
-      setHistory([url]);
-      setHistoryIndex(0);
-      if (desktop) {
-        void invoke('browser_navigate', { url }).catch((error) => setNativeError(String(error)));
-      }
+      lastPropUrl.current = url; setAddress(url); setCurrentUrl(url); setHistory([url]); setHistoryIndex(0);
+      if (desktop) void invoke('browser_navigate', { url }).catch((error) => setNativeError(String(error)));
     }
   }, [url, desktop]);
 
   useEffect(() => {
     if (!desktop) return;
-    if (suspend) {
-      void invoke('browser_set_visible', { visible: false }).catch((error) => setNativeError(String(error)));
-    } else {
+    if (suspend) void invoke('browser_set_visible', { visible: false }).catch((error) => setNativeError(String(error)));
+    else {
       const rect = viewportRef.current?.getBoundingClientRect();
-      if (rect && rect.width > 1 && rect.height > 1) {
-        void invoke('browser_set_bounds', {
-          x: Math.max(0, rect.left), y: Math.max(0, rect.top),
-          width: rect.width, height: rect.height,
-        }).catch((error) => setNativeError(String(error)));
-      }
+      if (rect && rect.width > 1 && rect.height > 1) void invoke('browser_set_bounds', { x: Math.max(0, rect.left), y: Math.max(0, rect.top), width: rect.width, height: rect.height }).catch((error) => setNativeError(String(error)));
     }
   }, [desktop, suspend]);
 
   useEffect(() => {
     if (!desktop) return;
-    let active = true;
-    let unlisten: (() => void) | undefined;
-    void listen<string>('browser-url-changed', (event) => {
-      if (!validUrl(event.payload)) return;
-      const nextUrl = new URL(event.payload).toString();
-      setAddress(nextUrl);
-      setCurrentUrl(nextUrl);
-      lastPropUrl.current = nextUrl;
-      onNavigate(nextUrl);
-      if (lastAutoRecordedUrl.current !== nextUrl) {
-        lastAutoRecordedUrl.current = nextUrl;
-        onAutoRecord(nextUrl);
-      }
-    }).then((stop) => {
-      if (active) unlisten = stop;
-      else stop();
-    });
-    return () => {
-      active = false;
-      unlisten?.();
-    };
-  }, [desktop]);
-
-  useEffect(() => {
-    if (!desktop) return;
     let disposed = false;
     let observer: ResizeObserver | null = null;
-
     const syncBounds = async () => {
       const element = viewportRef.current;
       if (!element || disposed) return;
       const rect = element.getBoundingClientRect();
-      if (rect.width < 2 || rect.height < 2) {
-        await invoke('browser_set_visible', { visible: false });
-        return;
-      }
-      await invoke('browser_set_bounds', {
-        x: Math.max(0, rect.left), y: Math.max(0, rect.top),
-        width: rect.width, height: rect.height,
-      });
+      if (rect.width < 2 || rect.height < 2) { await invoke('browser_set_visible', { visible: false }); return; }
+      await invoke('browser_set_bounds', { x: Math.max(0, rect.left), y: Math.max(0, rect.top), width: rect.width, height: rect.height });
       if (!disposed) setNativeReady(true);
     };
-
     const onLayout = () => { void syncBounds().catch((error) => setNativeError(String(error))); };
-
     void syncBounds().catch((error) => setNativeError(String(error)));
-    window.addEventListener('resize', onLayout);
-    window.addEventListener('scroll', onLayout, true);
-    if (viewportRef.current && typeof ResizeObserver !== 'undefined') {
-      observer = new ResizeObserver(onLayout);
-      observer.observe(viewportRef.current);
-    }
-
-    return () => {
-      disposed = true;
-      observer?.disconnect();
-      window.removeEventListener('resize', onLayout);
-      window.removeEventListener('scroll', onLayout, true);
-      void invoke('browser_set_visible', { visible: false }).catch(() => undefined);
-    };
+    window.addEventListener('resize', onLayout); window.addEventListener('scroll', onLayout, true);
+    if (viewportRef.current && typeof ResizeObserver !== 'undefined') { observer = new ResizeObserver(onLayout); observer.observe(viewportRef.current); }
+    return () => { disposed = true; observer?.disconnect(); window.removeEventListener('resize', onLayout); window.removeEventListener('scroll', onLayout, true); void invoke('browser_set_visible', { visible: false }).catch(() => undefined); };
   }, [desktop]);
 
   async function navigate(value: string, addHistory = true) {
     let next = value.trim();
     if (!/^https?:\/\//i.test(next)) next = 'https://' + next;
     if (!validUrl(next)) return;
-    next = new URL(next).toString();
-    lastPropUrl.current = next;
-    setCurrentUrl(next);
-    setAddress(next);
-
-    if (addHistory) {
-      const nextHistory = [...history.slice(0, historyIndex + 1), next];
-      setHistory(nextHistory);
-      setHistoryIndex(nextHistory.length - 1);
-    }
-
-    if (desktop) {
-      try {
-        await invoke('browser_navigate', { url: next });
-      } catch (error) {
-        setNativeError(String(error));
-      }
-    } else {
-      setReloadKey((value) => value + 1);
-    }
+    next = new URL(next).toString(); lastPropUrl.current = next; setCurrentUrl(next); setAddress(next);
+    if (addHistory) { const nextHistory = [...history.slice(0, historyIndex + 1), next]; setHistory(nextHistory); setHistoryIndex(nextHistory.length - 1); }
+    if (desktop) { try { await invoke('browser_navigate', { url: next }); } catch (error) { setNativeError(String(error)); } }
+    else setReloadKey((value) => value + 1);
     onNavigate(next);
   }
-
   function goBack() {
-    if (desktop) {
-      void invoke('browser_back').catch((error) => setNativeError(String(error)));
-      return;
-    }
-    if (historyIndex <= 0) return;
-    const nextIndex = historyIndex - 1;
-    setHistoryIndex(nextIndex);
-    void navigate(history[nextIndex], false);
+    if (desktop) { void invoke('browser_back').catch((error) => setNativeError(String(error))); return; }
+    if (historyIndex <= 0) return; const nextIndex = historyIndex - 1; setHistoryIndex(nextIndex); void navigate(history[nextIndex], false);
   }
-
   function goForward() {
-    if (desktop) {
-      void invoke('browser_forward').catch((error) => setNativeError(String(error)));
-      return;
-    }
-    if (historyIndex >= history.length - 1) return;
-    const nextIndex = historyIndex + 1;
-    setHistoryIndex(nextIndex);
-    void navigate(history[nextIndex], false);
+    if (desktop) { void invoke('browser_forward').catch((error) => setNativeError(String(error))); return; }
+    if (historyIndex >= history.length - 1) return; const nextIndex = historyIndex + 1; setHistoryIndex(nextIndex); void navigate(history[nextIndex], false);
   }
-
   function reload() {
-    if (desktop) {
-      void invoke('browser_reload').catch((error) => setNativeError(String(error)));
-    } else {
-      setReloadKey((value) => value + 1);
-    }
+    if (desktop) void invoke('browser_reload').catch((error) => setNativeError(String(error)));
+    else setReloadKey((value) => value + 1);
   }
-
   return (
     <section className="browser-workspace">
       <div className="browser-shell">
@@ -448,16 +425,18 @@ function BrowserFrame({ url, onNavigate, onSave, onAutoRecord, suspend }: { url:
             <Globe2 size={14}/><input aria-label="Alamat website" value={address} onChange={(event) => setAddress(event.target.value)} spellCheck={false}/>
             <button type="submit">Buka</button>
           </form>
-          <button className="icon-button browser-save" onClick={() => onSave(currentUrl)} title="Simpan alamat ke Buka Data"><BookmarkPlus size={16}/></button>
         </div>
         <div className="browser-viewport" ref={viewportRef}>
-          {desktop ? (
-            <div className="native-browser-placeholder">
-              {nativeError ? <span>Browser desktop gagal dijalankan: {nativeError}</span> : !nativeReady ? <span>Menyiapkan browser internal...</span> : null}
-            </div>
-          ) : (
-            <iframe key={reloadKey} title="Browser GAME" src={currentUrl} allow="clipboard-read; clipboard-write; fullscreen; autoplay" referrerPolicy="strict-origin-when-cross-origin"/>
-          )}
+          {desktop ? <div className="native-browser-placeholder">{nativeError ? <span>Browser desktop gagal dijalankan: {nativeError}</span> : !nativeReady ? <span>Menyiapkan browser internal...</span> : null}</div> :
+            <iframe key={reloadKey} title="Browser GAME" src={currentUrl} allow="clipboard-read; clipboard-write; fullscreen; autoplay" referrerPolicy="strict-origin-when-cross-origin"/>}
+        </div>
+      </div>
+      <div className="recording-toolbar">
+        <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Menunggu Play / Start Game' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Klik tombol Play di dalam Solitaire untuk mulai otomatis' : eventCount.toLocaleString('id-ID') + ' aktivitas mouse terekam'}</span></div></div>
+        <div className="recording-actions">
+          {recordingStatus === 'recording' && <button className="button button-secondary" onClick={onPause}><Pause size={15}/> Jeda</button>}
+          {recordingStatus === 'paused' && <button className="button button-primary" onClick={onResume}><Play size={15}/> Lanjutkan</button>}
+          {recordingStatus !== 'waiting' && <button className="button button-danger" onClick={onStop} disabled={savingRecord}>{savingRecord ? <LoaderCircle className="spin" size={15}/> : <Square size={14}/>} {savingRecord ? 'Menyimpan...' : 'Stop'}</button>}
         </div>
       </div>
     </section>
