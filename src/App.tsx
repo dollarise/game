@@ -4,6 +4,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import { Webview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import {
   ArrowLeft, ArrowRight, ArrowUpRight, BookmarkPlus, Check, ChevronDown, Clock3,
@@ -343,6 +344,24 @@ function BrowserFrame({ url, onNavigate, onSave }: { url: string; onNavigate: (u
       }
     }
   }, [url, desktop]);
+
+  useEffect(() => {
+    if (!desktop) return;
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void listen<string>('browser-url-changed', (event) => {
+      if (!validUrl(event.payload)) return;
+      setAddress(event.payload);
+      setCurrentUrl(event.payload);
+    }).then((stop) => {
+      if (active) unlisten = stop;
+      else stop();
+    });
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [desktop]);
 
   useEffect(() => {
     if (!desktop) return;
