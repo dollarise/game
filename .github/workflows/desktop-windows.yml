@@ -13,7 +13,7 @@ jobs:
     runs-on: windows-latest
     env:
       VITE_SUPABASE_URL: https://ufnpohdmrndxtycnwkfa.supabase.co
-      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+      VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVmbnBvaGRtcm5keHR5Y253a2ZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4MjE5NjAsImV4cCI6MjExMDM5Nzk2MH0.O2Yl-TvnndHcorq6_idMLKGvFajCr4665vH4OYI6Y54
     steps:
       - name: Checkout
         uses: actions/checkout@v4
