@@ -4,7 +4,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import {
-  ArrowLeft, ArrowRight, BookmarkPlus, Check, ChevronDown, Clock3,
+  ArrowLeft, ArrowRight, BookmarkPlus, Check, ChevronDown,
   Globe2, HardDrive, LoaderCircle, Menu,
   LogOut, MonitorPlay, Plus, RefreshCw, Search, Settings2,
   ShieldCheck, Trash2, X, Users, UserPlus, Shield, Pause, Play, Square
@@ -12,7 +12,7 @@ import {
 
 type Section = 'browser' | 'data' | 'admin';
 type MouseEventData = { type: 'move' | 'click'; x: number; y: number; button?: number; elapsed_ms: number; label?: string };
-type SavedRecord = { id: string; title: string; duration_ms: number; event_count: number; events: MouseEventData[]; recorded_at: string };
+type SavedRecord = { id: string; title: string; duration_ms: number; event_count: number; events?: MouseEventData[]; recorded_at: string };
 
 const DEFAULT_URL = 'https://1xlite-6487.com/en/games/solitaire';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -42,6 +42,7 @@ export default function App() {
   const [urlDraft, setUrlDraft] = useState(DEFAULT_URL);
   const [records, setRecords] = useState<SavedRecord[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<SavedRecord | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -71,7 +72,7 @@ export default function App() {
       setLoading(true);
       const [{ data: setting, error: settingError }, { data: rows, error: rowsError }] = await Promise.all([
         db!.from('game_settings').select('target_url').eq('user_id', session!.user.id).maybeSingle(),
-        db!.from('game_mouse_recordings').select('id,title,duration_ms,event_count,events,recorded_at').eq('user_id', session!.user.id).order('recorded_at', { ascending: false }).limit(250),
+        db!.from('game_mouse_recordings').select('id,title,duration_ms,event_count,recorded_at').eq('user_id', session!.user.id).order('recorded_at', { ascending: false }).limit(250),
       ]);
       if (!active) return;
       if (settingError || rowsError) ping('Gagal memuat data akun: ' + (settingError?.message || rowsError?.message));
@@ -138,6 +139,16 @@ export default function App() {
     }
     setTargetUrl(next); setUrlDraft(next); setSaving(false); setSettingsOpen(false);
     ping('Pengaturan website berhasil disimpan.');
+  }
+
+  async function openRecord(item: SavedRecord) {
+    if (!db) return;
+    setSelectedRecord({ ...item, events: [] });
+    setDetailLoading(true);
+    const { data, error } = await db.from('game_mouse_recordings').select('events').eq('id', item.id).single();
+    setDetailLoading(false);
+    if (error) { ping('Gagal membuka data rekaman: ' + error.message); return; }
+    setSelectedRecord({ ...item, events: (data.events || []) as MouseEventData[] });
   }
 
   async function deleteRecord(id: string) {
@@ -247,13 +258,13 @@ export default function App() {
               <div className="data-summary"><div className="summary-icon"><BookmarkPlus size={19}/></div><div><span>Total sesi rekaman tersimpan</span><b>{records.length} <small>sesi</small></b></div><div className="summary-divider"/><div className="summary-meta"><span>Rekaman terakhir</span><b>{records[0] ? new Date(records[0].recorded_at).toLocaleString('id-ID') : 'Belum ada data'}</b></div></div>
               <div className="data-panel"><div className="panel-heading"><div><h2>Rekaman Solitaire</h2><span>Data aktivitas mouse tersimpan per sesi, terpisah untuk setiap akun</span></div><div className="search-box"><Search size={16}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari sesi rekaman..."/></div></div>
                 {loading ? <div className="empty-state"><LoaderCircle className="spin" size={25}/><span>Memuat data...</span></div> : filteredRecords.length === 0 ? <div className="empty-state"><div className="empty-icon"><HardDrive size={23}/></div><b>{search ? 'Data tidak ditemukan' : 'Belum ada rekaman tersimpan'}</b><span>{search ? 'Coba kata kunci lain.' : 'Buka menu Rekam, lalu klik Play / Start Game di dalam Solitaire.'}</span>{!search && <button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}>Buka Rekam</button>}</div> :
-                <div className="record-list">{filteredRecords.map((item) => <div className="record-row" key={item.id}><div className="record-site-icon"><MonitorPlay size={18}/></div><div className="record-main"><b>{item.title}</b><span>{formatDuration(item.duration_ms)} · {item.event_count.toLocaleString('id-ID')} aktivitas mouse</span><small>{new Date(item.recorded_at).toLocaleString('id-ID')}</small></div><button className="button button-secondary" onClick={() => setSelectedRecord(item)} title="Buka data rekaman">Buka Data</button><button className="icon-button danger-hover" onClick={() => void deleteRecord(item.id)} title="Hapus rekaman"><Trash2 size={16}/></button></div>)}</div>}
+                <div className="record-list">{filteredRecords.map((item) => <div className="record-row" key={item.id}><div className="record-site-icon"><MonitorPlay size={18}/></div><div className="record-main"><b>{item.title}</b><span>{formatDuration(item.duration_ms)} · {item.event_count.toLocaleString('id-ID')} aktivitas mouse</span><small>{new Date(item.recorded_at).toLocaleString('id-ID')}</small></div><button className="button button-secondary" onClick={() => void openRecord(item)} title="Buka data rekaman">Buka Data</button><button className="icon-button danger-hover" onClick={() => void deleteRecord(item.id)} title="Hapus rekaman"><Trash2 size={16}/></button></div>)}</div>}
               </div>
             </>
           ) : isSuperAdmin ? <AdminPanel db={db} session={session} ping={ping} /> : <div className="empty-state"><Shield size={24}/><b>Akses ditolak</b><span>Menu ini hanya tersedia untuk Super Admin.</span></div>}
         </div>
       </main>
-      {selectedRecord && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedRecord(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">DETAIL REKAMAN</div><h2>{selectedRecord.title}</h2></div><button className="icon-button" onClick={() => setSelectedRecord(null)} aria-label="Tutup"><X size={19}/></button></div><div className="record-detail-summary"><div><span>Durasi aktif</span><b>{formatDuration(selectedRecord.duration_ms)}</b></div><div><span>Total aktivitas</span><b>{selectedRecord.event_count.toLocaleString('id-ID')}</b></div></div><div className="record-event-list"><div className="record-event-head"><b>Urutan aktivitas mouse</b><span>Menampilkan maksimal 200 aktivitas pertama</span></div>{selectedRecord.events.slice(0, 200).map((event, index) => <div className="record-event-row" key={index}><span>{index + 1}</span><b>{event.type === 'move' ? 'Gerak' : 'Klik'}</b><span>{formatDuration(event.elapsed_ms)}</span><span>X: {Math.round(event.x)} · Y: {Math.round(event.y)}</span>{event.type === 'click' && <small>{event.button === 2 ? 'Klik kanan' : 'Klik kiri'}</small>}</div>)}</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSelectedRecord(null)}>Tutup</button></div></section></div>}
+      {selectedRecord && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedRecord(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">DETAIL REKAMAN</div><h2>{selectedRecord.title}</h2></div><button className="icon-button" onClick={() => setSelectedRecord(null)} aria-label="Tutup"><X size={19}/></button></div><div className="record-detail-summary"><div><span>Durasi aktif</span><b>{formatDuration(selectedRecord.duration_ms)}</b></div><div><span>Total aktivitas</span><b>{selectedRecord.event_count.toLocaleString('id-ID')}</b></div></div><div className="record-event-list">{detailLoading ? <div className="empty-state"><LoaderCircle className="spin" size={22}/>Memuat detail rekaman...</div> : <><div className="record-event-head"><b>Urutan aktivitas mouse</b><span>Menampilkan maksimal 200 aktivitas pertama</span></div>{(selectedRecord.events || []).slice(0, 200).map((event, index) => <div className="record-event-row" key={index}><span>{index + 1}</span><b>{event.type === 'move' ? 'Gerak' : 'Klik'}</b><span>{formatDuration(event.elapsed_ms)}</span><span>X: {Math.round(event.x)} · Y: {Math.round(event.y)}</span>{event.type === 'click' && <small>{event.button === 2 ? 'Klik kanan' : 'Klik kiri'}</small>}</div>)}</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSelectedRecord(null)}>Tutup</button></div></section></div>}
       {settingsOpen && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section className="settings-modal"><div className="modal-head"><div><div className="eyebrow">KONFIGURASI</div><h2>Pengaturan Website</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Tutup"><X size={19}/></button></div><p className="modal-copy">Tentukan alamat website yang akan dibuka pada browser internal GAME.</p><label className="field-label" htmlFor="target-url">URL Website Tujuan</label><input id="target-url" className="url-input" value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://contoh.com" onKeyDown={(e) => { if (e.key === 'Enter') void saveSettings(); }}/><div className="field-hint"><ShieldCheck size={14}/> Gunakan alamat lengkap dengan https:// atau http://</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSettingsOpen(false)}>Batal</button><button className="button button-primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} Simpan Pengaturan</button></div></section></div>}
       {notice && <div className="toast"><Check size={16}/>{notice}</div>}
     </div>
