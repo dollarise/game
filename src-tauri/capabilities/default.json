@@ -11,6 +11,13 @@
     "core:webview:allow-set-webview-position",
     "core:webview:allow-set-webview-size",
     "core:webview:allow-webview-show",
-    "core:webview:allow-webview-hide"
+    "core:webview:allow-webview-hide",
+    "allow-browser-navigate",
+    "allow-browser-back",
+    "allow-browser-forward",
+    "allow-browser-reload",
+    "allow-browser-set-bounds",
+    "allow-browser-set-visible",
+    "allow-recording-event"
   ]
 }
