@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import {
   Activity, ArrowUpRight, BookmarkPlus, Check, ChevronDown, Clock3,
   ExternalLink, Globe2, HardDrive, LoaderCircle, Maximize2, Menu,
-  MonitorPlay, Plus, RefreshCw, Search, Settings2,
+  LogOut, MonitorPlay, Plus, RefreshCw, Search, Settings2,
   ShieldCheck, Trash2, X
 } from 'lucide-react';
 
@@ -27,6 +27,8 @@ function validUrl(value: string) {
 
 export default function App() {
   const [section, setSection] = useState<Section>('record');
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [targetUrl, setTargetUrl] = useState(DEFAULT_URL);
   const [urlDraft, setUrlDraft] = useState(DEFAULT_URL);
   const [records, setRecords] = useState<SavedRecord[]>([]);
@@ -38,30 +40,42 @@ export default function App() {
   const [mobileNav, setMobileNav] = useState(false);
 
   useEffect(() => {
+    if (!db) { setAuthReady(true); setLoading(false); return; }
     let active = true;
-    async function load() {
-      const localUrl = localStorage.getItem('game.targetUrl');
-      if (localUrl && validUrl(localUrl) && active) {
-        setTargetUrl(localUrl); setUrlDraft(localUrl);
-      }
-      if (db) {
-        const [{ data: setting }, { data: rows }] = await Promise.all([
-          db.from('game_settings').select('target_url').eq('id', 1).maybeSingle(),
-          db.from('game_records').select('id,title,url,recorded_at').order('recorded_at', { ascending: false }).limit(250),
-        ]);
-        if (!active) return;
-        if (setting?.target_url && validUrl(setting.target_url)) {
-          setTargetUrl(setting.target_url); setUrlDraft(setting.target_url);
-          localStorage.setItem('game.targetUrl', setting.target_url);
-        }
-        if (rows) setRecords(rows as SavedRecord[]);
-        else setRecords(readLocalRecords());
-      } else if (active) setRecords(readLocalRecords());
-      if (active) setLoading(false);
-    }
-    void load();
-    return () => { active = false; };
+    db.auth.getSession().then(({ data }) => {
+      if (active) { setSession(data.session); setAuthReady(true); }
+    });
+    const { data: listener } = db.auth.onAuthStateChange((_event, nextSession) => {
+      if (active) setSession(nextSession);
+    });
+    return () => { active = false; listener.subscription.unsubscribe(); };
   }, []);
+
+  useEffect(() => {
+    if (!session || !db) { setRecords([]); setLoading(false); return; }
+    let active = true;
+    async function loadUserData() {
+      setLoading(true);
+      const [{ data: setting, error: settingError }, { data: rows, error: rowsError }] = await Promise.all([
+        db!.from('game_settings').select('target_url').eq('user_id', session!.user.id).maybeSingle(),
+        db!.from('game_records').select('id,title,url,recorded_at').eq('user_id', session!.user.id).order('recorded_at', { ascending: false }).limit(250),
+      ]);
+      if (!active) return;
+      if (settingError || rowsError) ping('Gagal memuat data akun: ' + (settingError?.message || rowsError?.message));
+      if (setting?.target_url && validUrl(setting.target_url)) {
+        setTargetUrl(setting.target_url); setUrlDraft(setting.target_url);
+      } else {
+        const initial = { user_id: session!.user.id, target_url: DEFAULT_URL };
+        const { error } = await db!.from('game_settings').upsert(initial, { onConflict: 'user_id' });
+        if (error) ping('Gagal membuat pengaturan akun: ' + error.message);
+        setTargetUrl(DEFAULT_URL); setUrlDraft(DEFAULT_URL);
+      }
+      setRecords((rows || []) as SavedRecord[]);
+      setLoading(false);
+    }
+    void loadUserData();
+    return () => { active = false; };
+  }, [session?.user.id]);
 
   const filteredRecords = useMemo(() => records.filter((item) =>
     (item.title + ' ' + item.url).toLowerCase().includes(search.toLowerCase())
@@ -83,7 +97,7 @@ export default function App() {
     const next = new URL(urlDraft.trim()).toString();
     localStorage.setItem('game.targetUrl', next);
     if (db) {
-      const { error } = await db.from('game_settings').upsert({ id: 1, target_url: next, updated_at: new Date().toISOString() });
+      const { error } = await db.from('game_settings').upsert({ user_id: session!.user.id, target_url: next, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
       if (error) { setSaving(false); ping('Gagal menyimpan ke database: ' + error.message); return; }
     }
     setTargetUrl(next); setUrlDraft(next); setSaving(false); setSettingsOpen(false);
@@ -91,7 +105,7 @@ export default function App() {
   }
 
   async function saveRecord() {
-    const record = { title: new URL(targetUrl).hostname, url: targetUrl, recorded_at: new Date().toISOString() };
+    const record = { user_id: session!.user.id, title: new URL(targetUrl).hostname, url: targetUrl, recorded_at: new Date().toISOString() };
     if (db) {
       const { data, error } = await db.from('game_records').insert(record).select('id,title,url,recorded_at').single();
       if (error) { ping('Gagal menyimpan data: ' + error.message); return; }
@@ -116,6 +130,15 @@ export default function App() {
 
   function openTarget() { window.open(targetUrl, '_blank', 'noopener,noreferrer'); }
 
+  async function signOut() {
+    if (!db) return;
+    const { error } = await db.auth.signOut();
+    if (error) ping('Gagal keluar: ' + error.message);
+  }
+
+  if (!authReady) return <div className="auth-loading"><LoaderCircle className="spin" size={26}/> Memeriksa sesi login...</div>;
+  if (!session || !db) return <AuthScreen db={db} />;
+
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobileNav ? 'sidebar-open' : ''}`}>
@@ -135,7 +158,7 @@ export default function App() {
       <main className="main-area">
         <header className="topbar">
           <div className="top-left"><button className="icon-button mobile-menu" onClick={() => setMobileNav(true)} aria-label="Buka menu"><Menu size={20}/></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><b>{section === 'record' ? 'Rekam' : 'Buka Data'}</b></div></div>
-          <div className="top-actions"><div className="connection"><span className="status-dot"/>{db ? 'Database aktif' : 'Lokal'}</div><button className="icon-button" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }} aria-label="Pengaturan"><Settings2 size={18}/></button><div className="avatar">G</div></div>
+          <div className="top-actions"><div className="connection"><span className="status-dot"/>{db ? 'Database aktif' : 'Lokal'}</div><button className="icon-button" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }} aria-label="Pengaturan"><Settings2 size={18}/></button><button className="icon-button" onClick={() => void signOut()} title="Keluar dari aplikasi" aria-label="Keluar"><LogOut size={17}/></button><div className="avatar">{(session.user.email || "U").charAt(0).toUpperCase()}</div></div>
         </header>
         <div className="content">
           {section === 'record' ? (
@@ -173,4 +196,60 @@ function BrowserFrame({ url, onOpen }: { url: string; onOpen: () => void }) {
   }, [url]);
   useEffect(() => setBlocked(false), [url]);
   return <div className="browser-shell"><div className="browser-chrome"><div className="window-dots"><i/><i/><i/></div><div className="address-pill"><ShieldCheck size={13}/><span>{url}</span></div><button className="icon-button browser-open" onClick={onOpen} aria-label="Buka di tab baru"><Maximize2 size={15}/></button></div><div className="browser-viewport"><iframe key={reloadKey} title="Website tujuan" src={url} onError={() => setBlocked(true)} allow="clipboard-read; clipboard-write; fullscreen" referrerPolicy="strict-origin-when-cross-origin"/>{blocked && <div className="frame-blocked"><div className="blocked-icon"><ExternalLink size={24}/></div><h3>Website tidak dapat ditampilkan di sini</h3><p>Website tujuan mungkin melarang pemuatan melalui iframe. Buka website langsung di tab browser untuk melanjutkan.</p><button className="button button-primary" onClick={onOpen}><ExternalLink size={16}/> Buka Website</button></div>}</div></div>;
+}
+
+
+function AuthScreen({ db }: { db: SupabaseClient | null }) {
+  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  async function submit() {
+    setError(''); setMessage('');
+    if (!db) { setError('Koneksi Supabase belum dikonfigurasi.'); return; }
+    if (!email.trim()) { setError('Masukkan alamat email.'); return; }
+    if (mode !== 'reset' && password.length < 6) { setError('Kata sandi minimal 6 karakter.'); return; }
+    setBusy(true);
+    if (mode === 'login') {
+      const { error: authError } = await db.auth.signInWithPassword({ email: email.trim(), password });
+      if (authError) setError(authError.message);
+    } else if (mode === 'signup') {
+      const { data, error: authError } = await db.auth.signUp({ email: email.trim(), password });
+      if (authError) setError(authError.message);
+      else if (data.session) setMessage('Akun berhasil dibuat. Anda sudah masuk.');
+      else setMessage('Pendaftaran berhasil. Periksa email Anda untuk konfirmasi sebelum login.');
+    } else {
+      const { error: authError } = await db.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: window.location.origin,
+      });
+      if (authError) setError(authError.message);
+      else setMessage('Jika email terdaftar, tautan pemulihan kata sandi akan dikirim ke inbox Anda.');
+    }
+    setBusy(false);
+  }
+
+  const title = mode === 'login' ? 'Masuk ke akun' : mode === 'signup' ? 'Buat akun baru' : 'Reset kata sandi';
+  return <div className="auth-page">
+    <div className="auth-card">
+      <div className="auth-brand"><div className="brand-mark"><Globe2 size={23}/></div><div><b>GAME</b><span>WEB WORKSPACE</span></div></div>
+      <div className="eyebrow"><ShieldCheck size={14}/> AREA AKUN</div>
+      <h1>{title}</h1>
+      <p className="auth-subtitle">{mode === 'login' ? 'Masuk untuk membuka workspace dan data pribadi Anda.' : mode === 'signup' ? 'Daftarkan email dan kata sandi untuk mulai menggunakan aplikasi.' : 'Masukkan email akun untuk menerima tautan pemulihan.'}</p>
+      <label className="field-label" htmlFor="auth-email">Email</label>
+      <input id="auth-email" className="url-input auth-input" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="nama@email.com" onKeyDown={e => { if(e.key === 'Enter') void submit(); }}/>
+      {mode !== 'reset' && <><label className="field-label" htmlFor="auth-password">Kata sandi</label><input id="auth-password" className="url-input auth-input" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Minimal 6 karakter" onKeyDown={e => { if(e.key === 'Enter') void submit(); }}/></>}
+      {error && <div className="auth-error">{error}</div>}
+      {message && <div className="auth-message">{message}</div>}
+      <button className="button button-primary auth-submit" onClick={() => void submit()} disabled={busy}>{busy ? <LoaderCircle className="spin" size={16}/> : null}{mode === 'login' ? 'Masuk' : mode === 'signup' ? 'Daftar Akun' : 'Kirim Tautan Reset'}</button>
+      <div className="auth-links">
+        {mode === 'login' && <><button onClick={() => {setMode('reset');setError('');setMessage('');}}>Lupa kata sandi?</button><span>Belum punya akun? <button onClick={() => {setMode('signup');setError('');setMessage('');}}>Daftar</button></span></>}
+        {mode === 'signup' && <span>Sudah punya akun? <button onClick={() => {setMode('login');setError('');setMessage('');}}>Masuk</button></span>}
+        {mode === 'reset' && <button onClick={() => {setMode('login');setError('');setMessage('');}}>Kembali ke halaman masuk</button>}
+      </div>
+      <div className="auth-private"><ShieldCheck size={14}/> Setiap akun hanya dapat mengakses data miliknya sendiri.</div>
+    </div>
+  </div>;
 }
