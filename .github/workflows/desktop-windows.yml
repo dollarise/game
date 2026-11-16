@@ -23,35 +23,52 @@ jobs:
         with:
           node-version: 22
 
-      - name: Setup Python for icon repair
+      - name: Setup Python for icon generation
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Normalize Windows ICO resource
+      - name: Generate a clean Windows ICO resource
         shell: pwsh
         run: |
           python -m pip install --disable-pip-version-check Pillow
           @'
           from pathlib import Path
-          from PIL import Image
+          from PIL import Image, ImageDraw, ImageFont
 
           icon_path = Path("src-tauri/icons/icon.ico")
-          with Image.open(icon_path) as source:
-              rgba = source.convert("RGBA")
-              rgba.save(
-                  icon_path,
-                  format="ICO",
-                  sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
-              )
+          icon_path.parent.mkdir(parents=True, exist_ok=True)
 
-          # Re-open the generated ICO and verify its directory entries.
+          # Generate a fresh, valid icon instead of trying to decode the
+          # malformed ICO currently committed in the repository.
+          image = Image.new("RGBA", (1024, 1024), (12, 25, 48, 255))
+          draw = ImageDraw.Draw(image)
+          draw.rounded_rectangle((72, 72, 952, 952), radius=190, fill=(24, 70, 125, 255), outline=(93, 180, 255, 255), width=28)
+          draw.rounded_rectangle((145, 145, 879, 879), radius=145, outline=(160, 215, 255, 255), width=18)
+
+          try:
+              font = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", 610)
+          except OSError:
+              font = ImageFont.load_default()
+
+          text = "G"
+          bounds = draw.textbbox((0, 0), text, font=font, stroke_width=0)
+          x = (1024 - (bounds[2] - bounds[0])) / 2 - bounds[0] - 10
+          y = (1024 - (bounds[3] - bounds[1])) / 2 - bounds[1] - 30
+          draw.text((x, y), text, font=font, fill=(255, 255, 255, 255))
+
+          image.save(
+              icon_path,
+              format="ICO",
+              sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+          )
+
           with Image.open(icon_path) as check:
               assert check.format == "ICO", f"Unexpected format: {check.format}"
-              assert check.size[0] > 0 and check.size[1] > 0
-              print(f"Validated Windows icon: {check.format}, {check.size}")
-          '@ | Set-Content -Encoding utf8 repair_icon.py
-          python repair_icon.py
+              assert check.ico.sizes() >= {(16, 16), (32, 32), (48, 48), (256, 256)}
+              print(f"Generated and validated Windows ICO sizes: {sorted(check.ico.sizes())}")
+          '@ | Set-Content -Encoding utf8 generate_icon.py
+          python generate_icon.py
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
