@@ -36,6 +36,10 @@ export function decodeBoardSnapshot(label?: string): BoardSnapshot | null {
   }
 }
 
+function pileKey(slot: string): string {
+  return slot.split(':').slice(0, 2).join(':');
+}
+
 function knownFaceUpCards(snapshot: BoardSnapshot): Map<string, string[]> {
   const locations = new Map<string, string[]>();
   for (const card of snapshot.cards) {
@@ -65,8 +69,8 @@ export function inferGameStep(
     // Duplicate DOM representations or ambiguous duplicate identities are
     // not sufficient evidence for a reliable move.
     if (oldSlots.length !== 1 || !newSlots || newSlots.length !== 1) continue;
-    if (oldSlots[0] !== newSlots[0]) {
-      moved.push({ code, from: oldSlots[0], to: newSlots[0] });
+    if (pileKey(oldSlots[0]) !== pileKey(newSlots[0])) {
+      moved.push({ code, from: pileKey(oldSlots[0]), to: pileKey(newSlots[0]) });
     }
   }
 
@@ -110,7 +114,7 @@ export function inferGameStep(
  */
 export function patternCertainty(snapshot: BoardSnapshot): 'exact' | 'partial' {
   const known = snapshot.cards.filter((card) =>
-    card.faceUp && !UNKNOWN_CODES.has(card.code.trim().toUpperCase())
+    !UNKNOWN_CODES.has(card.code.trim().toUpperCase())
   );
   const uniqueCodes = new Set(known.map((card) => card.code.trim().toUpperCase()));
   return snapshot.cards.length === 52 && known.length === 52 && uniqueCodes.size === 52
