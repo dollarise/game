@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import {
-  Activity, ArrowUpRight, BookmarkPlus, Check, ChevronDown, Clock3,
-  ExternalLink, Globe2, HardDrive, LoaderCircle, Maximize2, Menu,
+  ArrowUpRight, BookmarkPlus, Check, ChevronDown, Clock3,
+  Globe2, HardDrive, LoaderCircle, Menu,
   LogOut, MonitorPlay, Plus, RefreshCw, Search, Settings2,
   ShieldCheck, Trash2, X, Users, UserPlus, Shield
 } from 'lucide-react';
 
-type Section = 'record' | 'data' | 'admin';
+type Section = 'data' | 'admin';
 type SavedRecord = { id: string; title: string; url: string; recorded_at: string };
 
 const DEFAULT_URL = 'https://1xlite-6487.com/';
@@ -26,7 +26,7 @@ function validUrl(value: string) {
 }
 
 export default function App() {
-  const [section, setSection] = useState<Section>('record');
+  const [section, setSection] = useState<Section>('data');
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [targetUrl, setTargetUrl] = useState(DEFAULT_URL);
@@ -82,11 +82,6 @@ export default function App() {
     (item.title + ' ' + item.url).toLowerCase().includes(search.toLowerCase())
   ), [records, search]);
 
-  function readLocalRecords(): SavedRecord[] {
-    try { return JSON.parse(localStorage.getItem('game.records') || '[]') as SavedRecord[]; }
-    catch { return []; }
-  }
-
   function ping(message: string) {
     setNotice(message);
     window.setTimeout(() => setNotice(''), 2800);
@@ -103,20 +98,6 @@ export default function App() {
     }
     setTargetUrl(next); setUrlDraft(next); setSaving(false); setSettingsOpen(false);
     ping('Alamat website berhasil disimpan.');
-  }
-
-  async function saveRecord() {
-    const record = { user_id: session!.user.id, title: new URL(targetUrl).hostname, url: targetUrl, recorded_at: new Date().toISOString() };
-    if (db) {
-      const { data, error } = await db.from('game_records').insert(record).select('id,title,url,recorded_at').single();
-      if (error) { ping('Gagal menyimpan data: ' + error.message); return; }
-      setRecords((old) => [data as SavedRecord, ...old]);
-    } else {
-      const local: SavedRecord = { ...record, id: crypto.randomUUID() };
-      const next = [local, ...readLocalRecords()];
-      localStorage.setItem('game.records', JSON.stringify(next)); setRecords(next);
-    }
-    ping('Alamat website berhasil direkam ke Buka Data.');
   }
 
   async function deleteRecord(id: string) {
@@ -146,7 +127,7 @@ export default function App() {
         <div className="brand"><div className="brand-mark"><Globe2 size={21} /></div><div><b>GAME</b><span>WEB WORKSPACE</span></div><button className="mobile-close icon-button" onClick={() => setMobileNav(false)} aria-label="Tutup menu"><X size={18}/></button></div>
         <div className="workspace-label">WORKSPACE</div>
         <nav className="side-nav">
-          <button className={section === 'record' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('record'); setMobileNav(false); }}><MonitorPlay size={18}/><span>Rekam</span>{section === 'record' && <span className="nav-dot"/>}</button>
+          <button className="nav-item" onClick={() => { openTarget(); setMobileNav(false); }}><MonitorPlay size={18}/><span>Rekam</span></button>
           <button className={section === 'data' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('data'); setMobileNav(false); }}><HardDrive size={18}/><span>Buka Data</span>{records.length > 0 && <small>{records.length}</small>}</button>
           {isSuperAdmin && <button className={section === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('admin'); setMobileNav(false); }}><Users size={18}/><span>Manajemen Pengguna</span>{section === 'admin' && <span className="nav-dot"/>}</button>}
         </nav>
@@ -159,23 +140,16 @@ export default function App() {
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
       <main className="main-area">
         <header className="topbar">
-          <div className="top-left"><button className="icon-button mobile-menu" onClick={() => setMobileNav(true)} aria-label="Buka menu"><Menu size={20}/></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><b>{section === 'record' ? 'Rekam' : section === 'data' ? 'Buka Data' : 'Manajemen Pengguna'}</b></div></div>
+          <div className="top-left"><button className="icon-button mobile-menu" onClick={() => setMobileNav(true)} aria-label="Buka menu"><Menu size={20}/></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><b>{section === 'data' ? 'Buka Data' : 'Manajemen Pengguna'}</b></div></div>
           <div className="top-actions"><div className="connection"><span className="status-dot"/>{db ? 'Database aktif' : 'Lokal'}</div><button className="icon-button" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }} aria-label="Pengaturan"><Settings2 size={18}/></button><button className="icon-button" onClick={() => void signOut()} title="Keluar dari aplikasi" aria-label="Keluar"><LogOut size={17}/></button><div className="avatar">{(session.user.email || "U").charAt(0).toUpperCase()}</div></div>
         </header>
         <div className="content">
-          {section === 'record' ? (
+          {section === 'data' ? (
             <>
-              <div className="page-heading"><div><div className="eyebrow"><Activity size={14}/> BROWSER SESSION</div><h1>Rekam Website</h1><p>Buka website tujuan dan simpan alamatnya ke daftar data.</p></div><button className="button button-secondary" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={16}/> Pengaturan Website</button></div>
-              <div className="site-toolbar"><div className="site-identity"><div className="site-icon"><Globe2 size={18}/></div><div><b>{new URL(targetUrl).hostname}</b><span>{targetUrl}</span></div></div><div className="toolbar-actions"><button className="icon-button" title="Muat ulang" onClick={() => window.dispatchEvent(new Event('game-reload-frame'))}><RefreshCw size={17}/></button><button className="button button-secondary" onClick={openTarget}><ExternalLink size={15}/> Buka Tab Baru</button><button className="button button-primary" onClick={saveRecord}><BookmarkPlus size={16}/> Rekam Alamat</button></div></div>
-              <BrowserFrame url={targetUrl} onOpen={openTarget}/>
-              <div className="under-browser"><span><span className="status-dot"/> Alamat aktif</span><span>Website tertentu mungkin membatasi tampilan di dalam aplikasi.</span></div>
-            </>
-          ) : section === 'data' ? (
-            <>
-              <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Daftar alamat website yang pernah Anda rekam.</p></div><button className="button button-primary" onClick={() => setSection('record')}><Plus size={16}/> Rekam Baru</button></div>
+              <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Daftar alamat website yang pernah Anda rekam.</p></div><button className="button button-primary" onClick={openTarget}><Plus size={16}/> Buka Website</button></div>
               <div className="data-summary"><div className="summary-icon"><BookmarkPlus size={19}/></div><div><span>Total data tersimpan</span><b>{records.length} <small>alamat</small></b></div><div className="summary-divider"/><div className="summary-meta"><span>Terakhir diperbarui</span><b>{records[0] ? new Date(records[0].recorded_at).toLocaleString('id-ID') : 'Belum ada data'}</b></div></div>
               <div className="data-panel"><div className="panel-heading"><div><h2>Data Terekam</h2><span>Semua alamat website yang tersimpan</span></div><div className="search-box"><Search size={16}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari data..."/></div></div>
-                {loading ? <div className="empty-state"><LoaderCircle className="spin" size={25}/><span>Memuat data...</span></div> : filteredRecords.length === 0 ? <div className="empty-state"><div className="empty-icon"><HardDrive size={23}/></div><b>{search ? 'Data tidak ditemukan' : 'Belum ada data terekam'}</b><span>{search ? 'Coba kata kunci lain.' : 'Buka menu Rekam untuk mulai menyimpan alamat website.'}</span>{!search && <button className="button button-primary" onClick={() => setSection('record')}>Mulai Rekam</button>}</div> :
+                {loading ? <div className="empty-state"><LoaderCircle className="spin" size={25}/><span>Memuat data...</span></div> : filteredRecords.length === 0 ? <div className="empty-state"><div className="empty-icon"><HardDrive size={23}/></div><b>{search ? 'Data tidak ditemukan' : 'Belum ada data terekam'}</b><span>{search ? 'Coba kata kunci lain.' : 'Klik menu Rekam untuk membuka website tujuan.'}</span>{!search && <button className="button button-primary" onClick={openTarget}>Buka Website</button>}</div> :
                 <div className="record-list">{filteredRecords.map((item) => <div className="record-row" key={item.id}><div className="record-site-icon"><Globe2 size={18}/></div><div className="record-main"><b>{item.title}</b><a href={item.url} target="_blank" rel="noreferrer">{item.url}</a></div><div className="record-time"><Clock3 size={14}/>{new Date(item.recorded_at).toLocaleString('id-ID')}</div><button className="icon-button" onClick={() => window.open(item.url, '_blank', 'noopener,noreferrer')} title="Buka website"><ArrowUpRight size={17}/></button><button className="icon-button danger-hover" onClick={() => void deleteRecord(item.id)} title="Hapus data"><Trash2 size={16}/></button></div>)}</div>}
               </div>
             </>
@@ -267,19 +241,6 @@ function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Sessio
     <p className="admin-footnote"><ShieldCheck size={14}/> Pengelolaan akun dilindungi pemeriksaan peran di server. Setiap akun tetap hanya dapat mengakses data miliknya sendiri.</p>
   </section>;
 }
-
-function BrowserFrame({ url, onOpen }: { url: string; onOpen: () => void }) {
-  const [blocked, setBlocked] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
-  useEffect(() => {
-    const reload = () => setReloadKey((v) => v + 1);
-    window.addEventListener('game-reload-frame', reload);
-    return () => window.removeEventListener('game-reload-frame', reload);
-  }, [url]);
-  useEffect(() => setBlocked(false), [url]);
-  return <div className="browser-shell"><div className="browser-chrome"><div className="window-dots"><i/><i/><i/></div><div className="address-pill"><ShieldCheck size={13}/><span>{url}</span></div><button className="icon-button browser-open" onClick={onOpen} aria-label="Buka di tab baru"><Maximize2 size={15}/></button></div><div className="browser-viewport"><iframe key={reloadKey} title="Website tujuan" src={url} onError={() => setBlocked(true)} allow="clipboard-read; clipboard-write; fullscreen" referrerPolicy="strict-origin-when-cross-origin"/>{blocked && <div className="frame-blocked"><div className="blocked-icon"><ExternalLink size={24}/></div><h3>Website tidak dapat ditampilkan di sini</h3><p>Website tujuan mungkin melarang pemuatan melalui iframe. Buka website langsung di tab browser untuk melanjutkan.</p><button className="button button-primary" onClick={onOpen}><ExternalLink size={16}/> Buka Website</button></div>}</div></div>;
-}
-
 
 function AuthScreen({ db }: { db: SupabaseClient | null }) {
   const [mode, setMode] = useState<'login' | 'reset'>('login');
