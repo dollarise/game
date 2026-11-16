@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
-import { decodeBoardSnapshot, inferGameStep, patternCertainty, type BoardCard, type BoardSnapshot } from './lib/solitaire-engine';
+import { decodeBoardSnapshot, inferGameStep, patternCertainty, type BoardCard } from './lib/solitaire-engine';
 import {
   ArrowLeft, ArrowRight, BookmarkPlus, Check, ChevronDown,
   Globe2, HardDrive, LoaderCircle, Menu,
@@ -339,7 +339,7 @@ export default function App() {
           {isSuperAdmin && <button className={section === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('admin'); setMobileNav(false); }}><Users size={18}/><span>Manajemen Pengguna</span>{section === 'admin' && <span className="nav-dot"/>}</button>}
         </nav>
         <div className="sidebar-bottom">
-          <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Rekam aktivitas mouse Solitaire</span></div></div>
+          <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Rekam langkah dan kondisi Solitaire</span></div></div>
           <button className="settings-link" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={17}/> Pengaturan <ChevronDown size={15}/></button>
           <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.3.0</span></div>
         </div>
@@ -357,11 +357,11 @@ export default function App() {
               savingRecord={savingRecord} onPause={pauseRecording} onResume={resumeRecording} onStop={() => void stopRecording()} />
           ) : section === 'data' ? (
             <>
-              <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Seluruh hasil rekaman gerakan dan klik mouse pada Solitaire.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Kembali ke Rekam</button></div>
+              <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Riwayat kondisi papan, langkah permainan, dan aktivitas mouse Solitaire.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Kembali ke Rekam</button></div>
               <div className="data-summary"><div className="summary-icon"><BookmarkPlus size={19}/></div><div><span>Total sesi rekaman tersimpan</span><b>{records.length} <small>sesi</small></b></div><div className="summary-divider"/><div className="summary-meta"><span>Rekaman terakhir</span><b>{records[0] ? new Date(records[0].recorded_at).toLocaleString('id-ID') : 'Belum ada data'}</b></div></div>
               <div className="data-panel"><div className="panel-heading"><div><h2>Rekaman Solitaire</h2><span>Data aktivitas mouse tersimpan per sesi, terpisah untuk setiap akun</span></div><div className="search-box"><Search size={16}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari sesi rekaman..."/></div></div><div className="data-tabs"><button className={dataTab === 'completed' ? 'data-tab active' : 'data-tab'} onClick={() => setDataTab('completed')}>Selesai <span>{records.filter((item) => item.status === 'completed').length}</span></button><button className={dataTab === 'incomplete' ? 'data-tab active' : 'data-tab'} onClick={() => setDataTab('incomplete')}>Belum Selesai <span>{records.filter((item) => item.status === 'incomplete').length}</span></button></div>
                 {loading ? <div className="empty-state"><LoaderCircle className="spin" size={25}/><span>Memuat data...</span></div> : filteredRecords.length === 0 ? <div className="empty-state"><div className="empty-icon"><HardDrive size={23}/></div><b>{search ? 'Data tidak ditemukan' : 'Belum ada rekaman tersimpan'}</b><span>{search ? 'Coba kata kunci lain.' : 'Buka menu Rekam, lalu klik Play / Start Game di dalam Solitaire.'}</span>{!search && <button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}>Buka Rekam</button>}</div> :
-                <div className="record-list">{filteredRecords.map((item) => <div className="record-row" key={item.id}><div className="record-site-icon"><MonitorPlay size={18}/></div><div className="record-main"><b>{item.title}</b>{item.status === 'incomplete' && <small className="record-status-incomplete">Belum Selesai · Give up</small>}<span>{formatDuration(item.duration_ms)} · {item.event_count.toLocaleString('id-ID')} aktivitas mouse</span><small>{new Date(item.recorded_at).toLocaleString('id-ID')}</small></div><button className="button button-secondary" onClick={() => void openRecord(item)} title="Buka data rekaman">Buka Data</button><button className="icon-button danger-hover" onClick={() => void deleteRecord(item.id)} title="Hapus rekaman"><Trash2 size={16}/></button></div>)}</div>}
+                <div className="record-list">{filteredRecords.map((item) => <div className="record-row" key={item.id}><div className="record-site-icon"><MonitorPlay size={18}/></div><div className="record-main"><b>{item.title}</b>{item.status === 'incomplete' && <small className="record-status-incomplete">Belum Selesai · Give up</small>}<span>{formatDuration(item.duration_ms)} · {item.event_count.toLocaleString('id-ID')} peristiwa terekam</span><small>{new Date(item.recorded_at).toLocaleString('id-ID')}</small></div><button className="button button-secondary" onClick={() => void openRecord(item)} title="Buka data rekaman">Buka Data</button><button className="icon-button danger-hover" onClick={() => void deleteRecord(item.id)} title="Hapus rekaman"><Trash2 size={16}/></button></div>)}</div>}
               </div>
             </>
           ) : isSuperAdmin ? <AdminPanel db={db} session={session} ping={ping} /> : <div className="empty-state"><Shield size={24}/><b>Akses ditolak</b><span>Menu ini hanya tersedia untuk Super Admin.</span></div>}
