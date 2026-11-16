@@ -3,3 +3,5 @@ dist
 .env
 .env.local
 *.tsbuildinfo
+src-tauri/target
+src-tauri/gen/schemas
