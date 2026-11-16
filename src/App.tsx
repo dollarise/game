@@ -198,7 +198,7 @@ export default function App() {
     const title = 'Solitaire - ' + new Date(recordedAt).toLocaleString('id-ID');
     const { data, error } = await db.from('game_mouse_recordings')
       .insert({ user_id: session.user.id, title, duration_ms: Math.round(duration), event_count: events.length, events })
-      .select('id,title,duration_ms,event_count,events,recorded_at').single();
+      .select('id,title,duration_ms,event_count,recorded_at').single();
     setSavingRecord(false);
     if (error) {
       setRecordingStatus('paused');
