@@ -54,6 +54,7 @@ export default function App() {
   const [recordingEvents, setRecordingEvents] = useState<MouseEventData[]>([]);
   const [elapsedMs, setElapsedMs] = useState(0);
   const recordingStartedAt = useRef<number | null>(null);
+  const recordingSessionActive = useRef(false);
   const accumulatedMs = useRef(0);
   const isSuperAdmin = session?.user.app_metadata?.role === 'super_admin';
 
@@ -103,7 +104,8 @@ export default function App() {
     let unlistenStart: (() => void) | undefined;
     let unlistenInput: (() => void) | undefined;
     void listen('recording-auto-start', () => {
-      if (!active) return;
+      if (!active || recordingSessionActive.current) return;
+      recordingSessionActive.current = true;
       accumulatedMs.current = 0;
       recordingStartedAt.current = Date.now();
       setElapsedMs(0);
@@ -192,7 +194,7 @@ export default function App() {
     }
     const duration = accumulatedMs.current;
     const events = recordingEvents;
-    if (events.length === 0) { setRecordingStatus('waiting'); setElapsedMs(0); accumulatedMs.current = 0; ping('Tidak ada aktivitas mouse yang terekam.'); return; }
+    if (events.length === 0) { recordingSessionActive.current = false; setRecordingStatus('waiting'); setElapsedMs(0); accumulatedMs.current = 0; ping('Tidak ada aktivitas mouse yang terekam.'); return; }
     setSavingRecord(true);
     const recordedAt = new Date().toISOString();
     const title = 'Solitaire - ' + new Date(recordedAt).toLocaleString('id-ID');
@@ -207,6 +209,7 @@ export default function App() {
       return;
     }
     setRecords((old) => [data as SavedRecord, ...old]);
+    recordingSessionActive.current = false;
     setRecordingStatus('waiting');
     setRecordingEvents([]);
     setElapsedMs(0);
