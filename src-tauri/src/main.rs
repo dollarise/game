@@ -265,7 +265,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
         }).sort((a, b) => a.rect.top - b.rect.top);
         const stackIndex = pileItems.indexOf(item);
         const slot = zone + ':' + String(pileIndex + 1).padStart(2, '0') + ':' + String(stackIndex + 1).padStart(2, '0');
-        cards.push({ code: item.code, faceUp: item.faceUp, slot });
+        cards.push({ code: item.faceUp ? item.code : 'BACK', faceUp: item.faceUp, slot });
       }
     }
     cards.sort((a, b) => a.slot.localeCompare(b.slot) || a.code.localeCompare(b.code));
