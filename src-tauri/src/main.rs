@@ -169,35 +169,103 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg')) + ' ' + labelOf(control.querySelector('img'))).toLowerCase();
     return /\bauto\s*build\b/.test(description);
   };
+  let lastBoardSignature = '';
+  let boardCaptureTimer = 0;
+  const cardCodeOf = (raw) => {
+    const text = String(raw || '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const long = text.match(/\b(ace|king|queen|jack|10|[2-9]|[AJQK])\s*(?:of\s*)?(spades?|hearts?|diamonds?|clubs?|♠|♥|♦|♣)\b/i);
+    if (long) {
+      const rank = ({ ace:'A', king:'K', queen:'Q', jack:'J' })[long[1].toLowerCase()] || long[1].toUpperCase();
+      const suitText = long[2].toLowerCase();
+      const suit = /spade|♠/.test(suitText) ? 'S' : /heart|♥/.test(suitText) ? 'H' : /diamond|♦/.test(suitText) ? 'D' : 'C';
+      return rank + suit;
+    }
+    const fileCode = String(raw || '').match(/(?:^|[\/_.\-\s])((?:10|[A2-9TJQK]))[_-]?([CDHS])(?=[\/_.\-\s]|$)/i);
+    if (fileCode) return fileCode[1].toUpperCase() + fileCode[2].toUpperCase();
+    return '';
+  };
   const captureBoard = () => {
     if (!started) return;
-    const nodes = Array.from(document.querySelectorAll('[class*="card"],[data-card],[data-testid*="card"],[aria-label*="card" i]'));
-    const cards = [];
-    const seen = new Set();
-    const rankSuit = /(?:^|\b)(10|[2-9]|[AJQK])\s*(?:of\s*)?(♠|♥|♦|♣|spades?|hearts?|diamonds?|clubs?)(?:\b|$)/i;
-    const rankOnly = /\b(ace|king|queen|jack|10|[2-9])\s+of\s+(spades?|hearts?|diamonds?|clubs?)\b/i;
-    for (const node of nodes) {
-      if (!(node instanceof HTMLElement)) continue;
-      const rect = node.getBoundingClientRect();
+    const selector = '[data-card],[data-rank],[class*="card" i],[aria-label*="card" i],img[src*="card" i]';
+    const rawNodes = Array.from(document.querySelectorAll(selector)).filter((node) => node instanceof HTMLElement);
+    const candidates = [];
+    const seenElements = new Set();
+    for (const node of rawNodes) {
+      const root = node.closest('[data-card],[class*="card" i],[aria-label*="card" i]') || node;
+      if (!(root instanceof HTMLElement) || seenElements.has(root)) continue;
+      seenElements.add(root);
+      const rect = root.getBoundingClientRect();
       if (rect.width < 12 || rect.height < 18 || rect.bottom < 0 || rect.right < 0 || rect.top > innerHeight || rect.left > innerWidth) continue;
-      const raw = [node.getAttribute('aria-label'), node.getAttribute('title'), node.getAttribute('data-card'), node.getAttribute('data-value'), node.getAttribute('alt'), node.textContent, node.className].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
-      const match = raw.match(rankSuit) || raw.match(rankOnly);
-      const faceUp = !!match;
-      const back = /back|covered|hidden|face-down/i.test(raw);
-      if (!faceUp && !back && !/card/i.test(raw)) continue;
-      const slot = Math.round(rect.left / Math.max(1, innerWidth) * 100) + ':' + Math.round(rect.top / Math.max(1, innerHeight) * 100);
-      const key = slot + ':' + raw.slice(0, 80);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      let code = 'UNKNOWN';
-      if (match) code = match[0].toUpperCase().replace(/\s+OF\s+/,'_');
-      else if (back) code = 'BACK';
-      cards.push({ code, faceUp, slot });
+      const descendants = Array.from(root.querySelectorAll('img,[data-rank],[data-suit]'));
+      const raw = [
+        root.getAttribute('aria-label'), root.getAttribute('title'), root.getAttribute('data-card'),
+        root.getAttribute('data-value'), root.getAttribute('data-rank'), root.getAttribute('data-suit'),
+        root.getAttribute('alt'), root.getAttribute('src'), root.className, root.textContent,
+        ...descendants.flatMap((item) => [
+          item.getAttribute('aria-label'), item.getAttribute('alt'), item.getAttribute('title'),
+          item.getAttribute('src'), item.getAttribute('data-rank'), item.getAttribute('data-suit')
+        ])
+      ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+      const code = cardCodeOf(raw);
+      const faceDown = /back|covered|hidden|face[\s_-]*down|card[\s_-]*back/i.test(raw);
+      if (!code && !faceDown && !/card/i.test(raw)) continue;
+      candidates.push({ root, rect, raw, code: code || (faceDown ? 'BACK' : 'UNKNOWN'), faceUp: !!code });
     }
-    if (!cards.length) return;
-    cards.sort((a,b) => a.slot.localeCompare(b.slot) || a.code.localeCompare(b.code));
-    const signature = cards.map(card => card.slot + '=' + card.code).join('|');
+    if (!candidates.length) return;
+
+    // Build logical pile/stack positions from the board's relative geometry,
+    // not from raw screen pixels. Keep top-row piles separate from tableau.
+    const minY = Math.min(...candidates.map((item) => item.rect.top));
+    const maxY = Math.max(...candidates.map((item) => item.rect.bottom));
+    const splitY = minY + (maxY - minY) * 0.34;
+    const groups = new Map();
+    for (const item of candidates) {
+      const zone = item.rect.top + item.rect.height / 2 < splitY ? 'top' : 'tableau';
+      const centerX = item.rect.left + item.rect.width / 2;
+      const group = groups.get(zone) || [];
+      group.push({ ...item, centerX });
+      groups.set(zone, group);
+    }
+    const cards = [];
+    for (const [zone, items] of groups) {
+      const centers = items.map((item) => item.centerX).sort((a, b) => a - b);
+      const columns = [];
+      for (const center of centers) {
+        const last = columns[columns.length - 1];
+        if (last && Math.abs(last.center - center) <= Math.max(18, innerWidth * 0.025)) {
+          last.values.push(center);
+          last.center = last.values.reduce((sum, value) => sum + value, 0) / last.values.length;
+        } else columns.push({ center, values: [center] });
+      }
+      for (const item of items) {
+        let pileIndex = 0;
+        let distance = Infinity;
+        columns.forEach((column, index) => {
+          const nextDistance = Math.abs(column.center - item.centerX);
+          if (nextDistance < distance) { distance = nextDistance; pileIndex = index; }
+        });
+        const pileItems = items.filter((candidate) => {
+          let nearest = 0, nearestDistance = Infinity;
+          columns.forEach((column, index) => {
+            const nextDistance = Math.abs(column.center - candidate.centerX);
+            if (nextDistance < nearestDistance) { nearestDistance = nextDistance; nearest = index; }
+          });
+          return nearest === pileIndex;
+        }).sort((a, b) => a.rect.top - b.rect.top);
+        const stackIndex = pileItems.indexOf(item);
+        const slot = zone + ':' + String(pileIndex + 1).padStart(2, '0') + ':' + String(stackIndex + 1).padStart(2, '0');
+        cards.push({ code: item.code, faceUp: item.faceUp, slot });
+      }
+    }
+    cards.sort((a, b) => a.slot.localeCompare(b.slot) || a.code.localeCompare(b.code));
+    const signature = cards.map((card) => card.slot + '=' + card.code + (card.faceUp ? ':UP' : ':DOWN')).join('|');
+    if (!signature || signature === lastBoardSignature) return;
+    lastBoardSignature = signature;
     void send('board', { label: JSON.stringify({ cards, signature }) });
+  };
+  const scheduleBoardCapture = (delay = 300) => {
+    if (boardCaptureTimer) window.clearTimeout(boardCaptureTimer);
+    boardCaptureTimer = window.setTimeout(() => { boardCaptureTimer = 0; captureBoard(); }, delay);
   };
   const isGiveUpControl = (target) => {
     if (!(target instanceof Element)) return false;
@@ -215,7 +283,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       started = true;
       void send('start', { x: event.clientX, y: event.clientY, button: event.button, label })
         .then(() => send('click', { x: event.clientX, y: event.clientY, button: event.button, label }))
-        .then(() => window.setTimeout(captureBoard, 650));
+        .then(() => scheduleBoardCapture(650));
       return;
     }
     const input = { x: event.clientX, y: event.clientY, button: event.button, label };
@@ -223,7 +291,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     // recording flag was never set by the frame that detected Play/Start.
     // Detect this explicit button click independently of that local flag.
     if (isAutoBuildControl(target)) {
-      if (started) void send('click', input).then(() => window.setTimeout(captureBoard, 350));
+      if (started) void send('click', input).then(() => scheduleBoardCapture(350));
       started = false;
       void send('auto_build', input);
       return;
@@ -234,7 +302,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       void send('give_up', input);
       return;
     }
-    if (started && Date.now() >= suppressClickUntil) void send('click', input).then(() => window.setTimeout(captureBoard, 350));
+    if (started && Date.now() >= suppressClickUntil) void send('click', input).then(() => scheduleBoardCapture(350));
   }, true);
   document.addEventListener('pointerdown', (event) => {
     if (!started) return;
