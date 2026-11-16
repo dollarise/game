@@ -76,16 +76,16 @@ fn recording_event(
     if webview.label() != "game-browser" {
         return Err("Peristiwa rekaman hanya diterima dari browser GAME.".to_string());
     }
+    // Validate the top-level GAME browser URL. The game can render its controls
+    // inside a cross-origin iframe, so the child frame URL is not authoritative.
     let current = webview.url().map_err(|error| error.to_string())?;
-    let page = url::Url::parse(&page_url).map_err(|error| error.to_string())?;
     let is_solitaire_page = current.scheme() == "https"
         && current.host_str() == Some("1xlite-6487.com")
         && current.path().starts_with("/en/games/solitaire");
-    let is_allowed_game_frame = page.scheme() == "https"
-        && page.host_str() == Some("1xlite-6487.com");
-    if !is_solitaire_page || !is_allowed_game_frame {
+    if !is_solitaire_page {
         return Err("Perekaman hanya diizinkan pada halaman Solitaire yang ditentukan.".to_string());
     }
+    let _ = page_url;
     match event_type.as_str() {
         "start" => app.emit("recording-auto-start", ()).map_err(|error| error.to_string()),
         "give_up" => app.emit("recording-auto-stop", ()).map_err(|error| error.to_string()),
@@ -103,8 +103,12 @@ fn recording_event(
 const MOUSE_RECORDING_SCRIPT: &str = r#"
 (() => {
   const topPath = (() => { try { return window.top.location.pathname; } catch (_) { return ''; } })();
-  if (location.hostname !== '1xlite-6487.com' ||
-      !(location.pathname.startsWith('/en/games/solitaire') || topPath.startsWith('/en/games/solitaire')) ||
+  const isGamePage = location.hostname === '1xlite-6487.com' && location.pathname.startsWith('/en/games/solitaire');
+  const isGameEmbed = (() => {
+    try { return new URL(document.referrer).hostname === '1xlite-6487.com'; }
+    catch (_) { return false; }
+  })();
+  if ((!isGamePage && !topPath.startsWith('/en/games/solitaire') && !isGameEmbed) ||
       window.__GAME_MOUSE_RECORDING_INSTALLED__) return;
   window.__GAME_MOUSE_RECORDING_INSTALLED__ = true;
   if (!window.__TAURI_INTERNALS__ || typeof window.__TAURI_INTERNALS__.invoke !== 'function') return;
@@ -160,15 +164,17 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
         .then(() => send('click', { x: event.clientX, y: event.clientY, button: event.button, label }));
       return;
     }
-    if (started) {
-      const input = { x: event.clientX, y: event.clientY, button: event.button, label };
-      void send('click', input).then(() => {
-        if (isGiveUpControl(target)) {
-          started = false;
-          return send('give_up', input);
-        }
-      });
+    const input = { x: event.clientX, y: event.clientY, button: event.button, label };
+    // Give up may be clicked inside a separate game iframe, whose local
+    // recording flag was never set by the frame that detected Play/Start.
+    // Detect this explicit button click independently of that local flag.
+    if (isGiveUpControl(target)) {
+      if (started) void send('click', input);
+      started = false;
+      void send('give_up', input);
+      return;
     }
+    if (started) void send('click', input);
   }, true);
   document.addEventListener('pointerdown', (event) => {
     if (!started || event.button === 0) return;
