@@ -68,6 +68,7 @@ export default function App() {
   const [elapsedMs, setElapsedMs] = useState(0);
   const recordingStartedAt = useRef<number | null>(null);
   const recordingSessionActive = useRef(false);
+  const savingRecordRef = useRef(false);
   const accumulatedMs = useRef(0);
   const isSuperAdmin = session?.user.app_metadata?.role === 'super_admin';
 
@@ -251,7 +252,9 @@ export default function App() {
   async function stopRecording(status?: 'completed' | 'incomplete') {
     if (status) recordingSaveStatusRef.current = status;
     const saveStatus = recordingSaveStatusRef.current;
-    if (!db || !session || recordingStatus === 'waiting' || savingRecord) return;
+    // Auto Build / Give up listeners are registered once, so their callback can
+    // retain the first render's state. Use refs for the live session/save guards.
+    if (!db || !session || !recordingSessionActive.current || savingRecordRef.current) return;
     if (recordingStartedAt.current !== null) {
       accumulatedMs.current += Date.now() - recordingStartedAt.current;
       recordingStartedAt.current = null;
@@ -268,12 +271,14 @@ export default function App() {
       ping('Tidak ada aktivitas mouse yang terekam.');
       return;
     }
+    savingRecordRef.current = true;
     setSavingRecord(true);
     const recordedAt = new Date().toISOString();
     const title = 'Solitaire - ' + new Date(recordedAt).toLocaleString('id-ID');
     const { data, error } = await db.from('game_mouse_recordings')
       .insert({ user_id: session.user.id, title, duration_ms: Math.round(duration), event_count: events.length, events, status: saveStatus })
       .select('id,title,duration_ms,event_count,status,recorded_at').single();
+    savingRecordRef.current = false;
     setSavingRecord(false);
     if (error) {
       setRecordingStatus('paused');
