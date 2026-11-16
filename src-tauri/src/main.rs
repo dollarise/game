@@ -272,7 +272,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const signature = cards.map((card) => card.slot + '=' + card.code + (card.faceUp ? ':UP' : ':DOWN')).join('|');
     if (!signature || signature === lastBoardSignature) return;
     lastBoardSignature = signature;
-    void send('board', { label: JSON.stringify({ cards, signature }) });
+    return send('board', { label: JSON.stringify({ cards, signature }) });
   };
   const scheduleBoardCapture = (delay = 300) => {
     if (boardCaptureTimer) window.clearTimeout(boardCaptureTimer);
@@ -303,11 +303,20 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     // recording flag was never set by the frame that detected Play/Start.
     // Detect this explicit button click independently of that local flag.
     if (isAutoBuildControl(target)) {
-      if (started) void send('click', input).then(() => scheduleBoardCapture(350));
-      started = false;
-      scheduleBoardCapture(180);
-      stopBoardObserver();
-      void send('auto_build', input);
+      // Auto Build can change the final board immediately. Capture and deliver
+      // that final snapshot before notifying the UI to save/stop the session.
+      if (started) {
+        void send('click', input)
+          .then(() => new Promise((resolve) => window.setTimeout(resolve, 350)))
+          .then(() => captureBoard())
+          .then(() => {
+            started = false;
+            stopBoardObserver();
+            return send('auto_build', input);
+          });
+      } else {
+        void send('auto_build', input);
+      }
       return;
     }
     if (isGiveUpControl(target)) {
