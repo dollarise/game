@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-recording-event"
+description = "Allows the Solitaire game page to send validated mouse recording events only."
+commands.allow = ["recording_event"]
