@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
-import { Webview } from '@tauri-apps/api/webview';
 import { listen } from '@tauri-apps/api/event';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -275,31 +273,6 @@ function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Sessio
   </section>;
 }
 
-let desktopBrowserView: Webview | null = null;
-let desktopBrowserCreation: Promise<Webview> | null = null;
-
-async function ensureDesktopBrowser(): Promise<Webview> {
-  if (desktopBrowserView) return desktopBrowserView;
-  if (desktopBrowserCreation) return desktopBrowserCreation;
-
-  desktopBrowserCreation = (async () => {
-    // The native Rust setup creates this WebView with a stable app-data profile.
-    // Never create a second WebView here: doing so could use a temporary profile.
-    const existing = await Webview.getByLabel('game-browser');
-    if (!existing) {
-      throw new Error('Browser internal belum dibuat dengan profil permanen.');
-    }
-    desktopBrowserView = existing;
-    return existing;
-  })();
-
-  try {
-    return await desktopBrowserCreation;
-  } finally {
-    desktopBrowserCreation = null;
-  }
-}
-
 function BrowserFrame({ url, onNavigate, onSave, onAutoRecord, suspend }: { url: string; onNavigate: (url: string) => void; onSave: (url: string) => void; onAutoRecord: (url: string) => void; suspend: boolean }) {
   const desktop = isTauri();
   const [address, setAddress] = useState(url);
@@ -310,7 +283,6 @@ function BrowserFrame({ url, onNavigate, onSave, onAutoRecord, suspend }: { url:
   const [nativeReady, setNativeReady] = useState(false);
   const [nativeError, setNativeError] = useState('');
   const viewportRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<Webview | null>(null);
   const lastPropUrl = useRef(url);
   const lastAutoRecordedUrl = useRef('');
 
@@ -321,23 +293,23 @@ function BrowserFrame({ url, onNavigate, onSave, onAutoRecord, suspend }: { url:
       setCurrentUrl(url);
       setHistory([url]);
       setHistoryIndex(0);
-      if (desktop && desktopBrowserView) {
+      if (desktop) {
         void invoke('browser_navigate', { url }).catch((error) => setNativeError(String(error)));
       }
     }
   }, [url, desktop]);
 
   useEffect(() => {
-    if (!desktop || !viewRef.current) return;
+    if (!desktop) return;
     if (suspend) {
-      void viewRef.current.hide();
+      void invoke('browser_set_visible', { visible: false }).catch((error) => setNativeError(String(error)));
     } else {
       const rect = viewportRef.current?.getBoundingClientRect();
       if (rect && rect.width > 1 && rect.height > 1) {
-        void viewRef.current.setPosition(new LogicalPosition(Math.max(0, rect.left), Math.max(0, rect.top)))
-          .then(() => viewRef.current?.setSize(new LogicalSize(rect.width, rect.height)))
-          .then(() => viewRef.current?.show())
-          .catch((error) => setNativeError(String(error)));
+        void invoke('browser_set_bounds', {
+          x: Math.max(0, rect.left), y: Math.max(0, rect.top),
+          width: rect.width, height: rect.height,
+        }).catch((error) => setNativeError(String(error)));
       }
     }
   }, [desktop, suspend]);
@@ -374,32 +346,22 @@ function BrowserFrame({ url, onNavigate, onSave, onAutoRecord, suspend }: { url:
 
     const syncBounds = async () => {
       const element = viewportRef.current;
-      const view = viewRef.current;
-      if (!element || !view || disposed) return;
+      if (!element || disposed) return;
       const rect = element.getBoundingClientRect();
       if (rect.width < 2 || rect.height < 2) {
-        await view.hide();
+        await invoke('browser_set_visible', { visible: false });
         return;
       }
-      await view.setPosition(new LogicalPosition(Math.max(0, rect.left), Math.max(0, rect.top)));
-      await view.setSize(new LogicalSize(rect.width, rect.height));
-      await view.show();
+      await invoke('browser_set_bounds', {
+        x: Math.max(0, rect.left), y: Math.max(0, rect.top),
+        width: rect.width, height: rect.height,
+      });
+      if (!disposed) setNativeReady(true);
     };
 
     const onLayout = () => { void syncBounds().catch((error) => setNativeError(String(error))); };
 
-    const initialize = async () => {
-      const view = await ensureDesktopBrowser();
-      if (disposed) {
-        await view.hide();
-        return;
-      }
-      viewRef.current = view;
-      await syncBounds();
-      if (!disposed) setNativeReady(true);
-    };
-
-    void initialize().catch((error) => setNativeError(String(error)));
+    void syncBounds().catch((error) => setNativeError(String(error)));
     window.addEventListener('resize', onLayout);
     window.addEventListener('scroll', onLayout, true);
     if (viewportRef.current && typeof ResizeObserver !== 'undefined') {
@@ -412,7 +374,7 @@ function BrowserFrame({ url, onNavigate, onSave, onAutoRecord, suspend }: { url:
       observer?.disconnect();
       window.removeEventListener('resize', onLayout);
       window.removeEventListener('scroll', onLayout, true);
-      if (viewRef.current) void viewRef.current.hide();
+      void invoke('browser_set_visible', { visible: false }).catch(() => undefined);
     };
   }, [desktop]);
 
