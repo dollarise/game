@@ -200,7 +200,7 @@ function BrowserFrame({ url, onOpen }: { url: string; onOpen: () => void }) {
 
 
 function AuthScreen({ db }: { db: SupabaseClient | null }) {
-  const [mode, setMode] = useState<'login' | 'signup' | 'reset'>('login');
+  const [mode, setMode] = useState<'login' | 'reset'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -211,16 +211,11 @@ function AuthScreen({ db }: { db: SupabaseClient | null }) {
     setError(''); setMessage('');
     if (!db) { setError('Koneksi Supabase belum dikonfigurasi.'); return; }
     if (!email.trim()) { setError('Masukkan alamat email.'); return; }
-    if (mode !== 'reset' && password.length < 6) { setError('Kata sandi minimal 6 karakter.'); return; }
+    if (mode === 'login' && password.length < 6) { setError('Kata sandi minimal 6 karakter.'); return; }
     setBusy(true);
     if (mode === 'login') {
       const { error: authError } = await db.auth.signInWithPassword({ email: email.trim(), password });
       if (authError) setError(authError.message);
-    } else if (mode === 'signup') {
-      const { data, error: authError } = await db.auth.signUp({ email: email.trim(), password });
-      if (authError) setError(authError.message);
-      else if (data.session) setMessage('Akun berhasil dibuat. Anda sudah masuk.');
-      else setMessage('Pendaftaran berhasil. Periksa email Anda untuk konfirmasi sebelum login.');
     } else {
       const { error: authError } = await db.auth.resetPasswordForEmail(email.trim(), {
         redirectTo: window.location.origin,
@@ -231,25 +226,24 @@ function AuthScreen({ db }: { db: SupabaseClient | null }) {
     setBusy(false);
   }
 
-  const title = mode === 'login' ? 'Masuk ke akun' : mode === 'signup' ? 'Buat akun baru' : 'Reset kata sandi';
+  const title = mode === 'login' ? 'Masuk ke akun' : 'Reset kata sandi';
   return <div className="auth-page">
     <div className="auth-card">
       <div className="auth-brand"><div className="brand-mark"><Globe2 size={23}/></div><div><b>GAME</b><span>WEB WORKSPACE</span></div></div>
       <div className="eyebrow"><ShieldCheck size={14}/> AREA AKUN</div>
       <h1>{title}</h1>
-      <p className="auth-subtitle">{mode === 'login' ? 'Masuk untuk membuka workspace dan data pribadi Anda.' : mode === 'signup' ? 'Daftarkan email dan kata sandi untuk mulai menggunakan aplikasi.' : 'Masukkan email akun untuk menerima tautan pemulihan.'}</p>
+      <p className="auth-subtitle">{mode === 'login' ? 'Masuk menggunakan akun yang dibuat oleh Super Admin.' : 'Masukkan email akun untuk menerima tautan pemulihan.'}</p>
       <label className="field-label" htmlFor="auth-email">Email</label>
       <input id="auth-email" className="url-input auth-input" type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="nama@email.com" onKeyDown={e => { if(e.key === 'Enter') void submit(); }}/>
-      {mode !== 'reset' && <><label className="field-label" htmlFor="auth-password">Kata sandi</label><input id="auth-password" className="url-input auth-input" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Minimal 6 karakter" onKeyDown={e => { if(e.key === 'Enter') void submit(); }}/></>}
+      {mode === 'login' && <><label className="field-label" htmlFor="auth-password">Kata sandi</label><input id="auth-password" className="url-input auth-input" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Masukkan kata sandi" onKeyDown={e => { if(e.key === 'Enter') void submit(); }}/></>}
       {error && <div className="auth-error">{error}</div>}
       {message && <div className="auth-message">{message}</div>}
-      <button className="button button-primary auth-submit" onClick={() => void submit()} disabled={busy}>{busy ? <LoaderCircle className="spin" size={16}/> : null}{mode === 'login' ? 'Masuk' : mode === 'signup' ? 'Daftar Akun' : 'Kirim Tautan Reset'}</button>
+      <button className="button button-primary auth-submit" onClick={() => void submit()} disabled={busy}>{busy ? <LoaderCircle className="spin" size={16}/> : null}{mode === 'login' ? 'Masuk' : 'Kirim Tautan Reset'}</button>
       <div className="auth-links">
-        {mode === 'login' && <><button onClick={() => {setMode('reset');setError('');setMessage('');}}>Lupa kata sandi?</button><span>Belum punya akun? <button onClick={() => {setMode('signup');setError('');setMessage('');}}>Daftar</button></span></>}
-        {mode === 'signup' && <span>Sudah punya akun? <button onClick={() => {setMode('login');setError('');setMessage('');}}>Masuk</button></span>}
+        {mode === 'login' && <button onClick={() => {setMode('reset');setError('');setMessage('');}}>Lupa kata sandi?</button>}
         {mode === 'reset' && <button onClick={() => {setMode('login');setError('');setMessage('');}}>Kembali ke halaman masuk</button>}
       </div>
-      <div className="auth-private"><ShieldCheck size={14}/> Setiap akun hanya dapat mengakses data miliknya sendiri.</div>
+      <div className="auth-private"><ShieldCheck size={14}/> Akun dibuat dan dikelola oleh Super Admin. Setiap akun hanya dapat mengakses data miliknya sendiri.</div>
     </div>
   </div>;
 }
