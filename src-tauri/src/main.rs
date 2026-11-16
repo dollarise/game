@@ -127,6 +127,8 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       element.getAttribute('title'),
       element.getAttribute('data-testid'),
       element.getAttribute('data-icon'),
+      element.getAttribute('data-lucide'),
+      element.getAttribute('class'),
       element.className && typeof element.className === 'string' ? element.className : ''
     ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
   };
@@ -170,7 +172,7 @@ fn main() {
             let window = app
                 .get_window("main")
                 .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "Jendela utama GAME tidak ditemukan."))?;
-            let start_url = url::Url::parse("https://1xlite-6487.com/")?;
+            let start_url = url::Url::parse("https://1xlite-6487.com/en/games/solitaire")?;
             let browser = WebviewBuilder::new(
                 "game-browser",
                 WebviewUrl::External(start_url),
