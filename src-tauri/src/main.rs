@@ -152,7 +152,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const card = target.closest('[class*="card"],[data-card],[data-testid*="card"],[aria-label*="card" i]');
     if (!card) return '';
     const description = labelOf(card);
-    const match = description.match(/(?:^|\\b)(ace|king|queen|jack|10|[2-9]|[AJQK])\\s*(?:of\\s*)?(spades?|hearts?|diamonds?|clubs?|♠|♥|♦|♣)(?:\\b|$)/i);
+    const match = description.match(/(?:^|\b)(ace|king|queen|jack|10|[2-9]|[AJQK])\s*(?:of\s*)?(spades?|hearts?|diamonds?|clubs?|♠|♥|♦|♣)(?:\b|$)/i);
     return match ? 'kartu ' + match[0].trim() : 'kartu (identitas belum terbaca)';
   };
   const isStartControl = (target) => {
@@ -234,7 +234,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       void send('give_up', input);
       return;
     }
-    if (started && Date.now() >= suppressClickUntil) void send('click', input);
+    if (started && Date.now() >= suppressClickUntil) void send('click', input).then(() => window.setTimeout(captureBoard, 350));
   }, true);
   document.addEventListener('pointerdown', (event) => {
     if (!started) return;
