@@ -150,8 +150,9 @@ export default function App() {
           if (!active) return;
           const match = (data || []).map((row: any) => {
             const savedEvents = Array.isArray(row.events) ? row.events as MouseEventData[] : [];
-            const savedBoard = [...savedEvents].reverse().find((item) => item.type === 'board');
-            return { row, savedEvents, savedBoard: decodeBoard(savedBoard?.label) };
+            const initialBoard = savedEvents.find((item) => item.type === 'board');
+            const latestBoard = [...savedEvents].reverse().find((item) => item.type === 'board');
+            return { row, savedEvents, savedBoard: decodeBoard(initialBoard?.label), latestBoard: decodeBoard(latestBoard?.label) };
           }).find((item) => item.savedBoard?.signature === snapshot.signature);
           if (match) {
             const steps = match.savedEvents.filter((item) => item.type === 'click' && item.label)
@@ -159,7 +160,7 @@ export default function App() {
             setPatternAlert({
               status: match.row.status,
               title: match.row.title,
-              cards: snapshot.cards,
+              cards: match.latestBoard?.cards || snapshot.cards,
               steps
             });
             ping(match.row.status === 'completed'
