@@ -1,7 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use tauri::{AppHandle, Emitter, Manager};
-use tauri::webview::{Webview, WebviewBuilder, WebviewUrl};
+use tauri::webview::{Webview, WebviewBuilder};
+use tauri::WebviewUrl;
 
 fn browser_view(app: &AppHandle) -> Result<Webview, String> {
     app.get_webview("game-browser")
