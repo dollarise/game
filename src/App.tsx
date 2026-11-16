@@ -82,6 +82,11 @@ export default function App() {
     (item.title + ' ' + item.url).toLowerCase().includes(search.toLowerCase())
   ), [records, search]);
 
+  function readLocalRecords(): SavedRecord[] {
+    try { return JSON.parse(localStorage.getItem('game.records') || '[]') as SavedRecord[]; }
+    catch { return []; }
+  }
+
   function ping(message: string) {
     setNotice(message);
     window.setTimeout(() => setNotice(''), 2800);
@@ -110,7 +115,23 @@ export default function App() {
     if (!db) localStorage.setItem('game.records', JSON.stringify(next));
   }
 
-  function openTarget() { window.open(targetUrl, '_blank', 'noopener,noreferrer'); }
+  async function saveRecord() {
+    const record = { user_id: session!.user.id, title: new URL(targetUrl).hostname, url: targetUrl, recorded_at: new Date().toISOString() };
+    if (db) {
+      const { data, error } = await db.from('game_records').insert(record).select('id,title,url,recorded_at').single();
+      if (error) { ping('Gagal menyimpan data: ' + error.message); return; }
+      setRecords((old) => [data as SavedRecord, ...old]);
+    } else {
+      const local: SavedRecord = { ...record, id: crypto.randomUUID() };
+      const next = [local, ...readLocalRecords()];
+      localStorage.setItem('game.records', JSON.stringify(next)); setRecords(next);
+    }
+  }
+
+  function openTarget() {
+    window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    void saveRecord();
+  }
 
   async function signOut() {
     if (!db) return;
