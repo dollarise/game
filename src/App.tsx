@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
+import { decodeBoardSnapshot, inferGameStep, patternCertainty, type BoardCard, type BoardSnapshot } from './lib/solitaire-engine';
 import {
   ArrowLeft, ArrowRight, BookmarkPlus, Check, ChevronDown,
   Globe2, HardDrive, LoaderCircle, Menu,
@@ -11,11 +12,8 @@ import {
 } from 'lucide-react';
 
 type Section = 'browser' | 'data' | 'admin';
-type MouseEventData = { type: 'move' | 'click' | 'board'; x: number; y: number; button?: number; elapsed_ms: number; label?: string };
-type BoardCard = { code: string; faceUp: boolean; slot: string };
-type BoardSnapshot = { cards: BoardCard[]; signature: string };
-type PatternAlert = { status: 'completed' | 'incomplete'; title: string; cards: BoardCard[]; steps: string[] };
-function decodeBoard(label?: string): BoardSnapshot | null { try { const parsed = JSON.parse(label || ''); return parsed && Array.isArray(parsed.cards) && typeof parsed.signature === 'string' ? parsed as BoardSnapshot : null; } catch { return null; } }
+type MouseEventData = { type: 'move' | 'click' | 'board' | 'game_step'; x: number; y: number; button?: number; elapsed_ms: number; label?: string };
+type PatternAlert = { status: 'completed' | 'incomplete'; title: string; cards: BoardCard[]; steps: string[]; certainty: 'exact' | 'partial' };
 type SavedRecord = { id: string; title: string; duration_ms: number; event_count: number; status: 'completed' | 'incomplete'; events?: MouseEventData[]; recorded_at: string };
 
 const DEFAULT_URL = 'https://1xlite-6487.com/en/games/solitaire';
@@ -139,7 +137,7 @@ export default function App() {
       const elapsed = accumulatedMs.current + Date.now() - recordingStartedAt.current;
       const payload = event.payload;
       if (payload.type === 'board') {
-        const snapshot = decodeBoard(payload.label);
+        const snapshot = decodeBoardSnapshot(payload.label);
         if (snapshot && snapshot.cards.length > 0 && !boardMatchChecked.current && db && session) {
           boardMatchChecked.current = true;
           const currentSession = sessionRef.current;
@@ -153,7 +151,7 @@ export default function App() {
             const savedEvents = Array.isArray(row.events) ? row.events as MouseEventData[] : [];
             const initialBoard = savedEvents.find((item) => item.type === 'board');
             const latestBoard = [...savedEvents].reverse().find((item) => item.type === 'board');
-            return { row, savedEvents, savedBoard: decodeBoard(initialBoard?.label), latestBoard: decodeBoard(latestBoard?.label) };
+            return { row, savedEvents, savedBoard: decodeBoardSnapshot(initialBoard?.label), latestBoard: decodeBoardSnapshot(latestBoard?.label) };
           }).find((item) => item.savedBoard?.signature === snapshot.signature);
           if (match) {
             const steps = match.savedEvents.filter((item) => item.type === 'click' && item.label)
@@ -164,15 +162,29 @@ export default function App() {
               cards: match.latestBoard?.cards || snapshot.cards,
               steps
             });
-            ping(match.row.status === 'completed'
-              ? 'Pola permainan cocok dengan rekaman yang sudah selesai.'
-              : 'Pola permainan cocok dengan rekaman yang belum selesai.');
+            ping(patternCertainty(snapshot) === 'exact'
+              ? (match.row.status === 'completed' ? 'Identitas pola cocok dengan rekaman selesai.' : 'Identitas pola cocok dengan rekaman belum selesai.')
+              : 'Susunan kartu terbuka cocok sebagai kandidat. Identitas kartu tertutup belum dapat dipastikan.');
           } else {
-            ping('Pola baru terdeteksi. Permainan akan direkam seperti biasa.');
+            ping(patternCertainty(snapshot) === 'exact'
+              ? 'Pola baru terdeteksi. Permainan akan direkam seperti biasa.'
+              : 'Belum ada kandidat pola yang cocok. Identitas pola masih bersifat parsial sampai kartu terbuka.');
           }
         }
       }
-      const nextEvents = [...recordingEventsRef.current, { ...payload, x: payload.x ?? 0, y: payload.y ?? 0, elapsed_ms: Math.round(elapsed) }];
+      let currentEvents = recordingEventsRef.current;
+      if (payload.type === 'board') {
+        const previousBoardEvent = [...currentEvents].reverse().find((item) => item.type === 'board');
+        const previousBoard = decodeBoardSnapshot(previousBoardEvent?.label);
+        const nextBoard = decodeBoardSnapshot(payload.label);
+        if (previousBoard && nextBoard) {
+          const step = inferGameStep(previousBoard, nextBoard);
+          if (step) {
+            currentEvents = [...currentEvents, { type: 'game_step', x: 0, y: 0, elapsed_ms: Math.round(elapsed), label: JSON.stringify(step) }];
+          }
+        }
+      }
+      const nextEvents = [...currentEvents, { ...payload, x: payload.x ?? 0, y: payload.y ?? 0, elapsed_ms: Math.round(elapsed) }];
       recordingEventsRef.current = nextEvents;
       setRecordingEvents(nextEvents);
     }).then((stop) => { if (active) unlistenInput = stop; else stop(); });
@@ -351,9 +363,9 @@ export default function App() {
           ) : isSuperAdmin ? <AdminPanel db={db} session={session} ping={ping} /> : <div className="empty-state"><Shield size={24}/><b>Akses ditolak</b><span>Menu ini hanya tersedia untuk Super Admin.</span></div>}
         </div>
       </main>
-      {selectedRecord && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedRecord(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">DETAIL REKAMAN</div><h2>{selectedRecord.title}</h2></div><button className="icon-button" onClick={() => setSelectedRecord(null)} aria-label="Tutup"><X size={19}/></button></div><div className="record-detail-summary"><div><span>Durasi aktif</span><b>{formatDuration(selectedRecord.duration_ms)}</b></div><div><span>Total aktivitas</span><b>{selectedRecord.event_count.toLocaleString('id-ID')}</b></div></div><div className="record-event-list">{detailLoading ? <div className="empty-state"><LoaderCircle className="spin" size={22}/>Memuat detail rekaman...</div> : <><div className="record-event-head"><b>Urutan aktivitas mouse</b><span>Menampilkan maksimal 200 aktivitas pertama</span></div>{(selectedRecord.events || []).slice(0, 200).map((event, index) => <div className="record-event-row" key={index}><span>{index + 1}</span><b>{event.type === 'move' ? 'Gerak' : event.type === 'board' ? 'Pola kartu' : 'Klik'}</b><span>{formatDuration(event.elapsed_ms)}</span>{event.type === 'board' ? <span>{decodeBoard(event.label)?.cards.length || 0} elemen kartu terdeteksi</span> : <span>X: {Math.round(event.x)} · Y: {Math.round(event.y)}</span>}{event.type === 'click' && <small>{event.label || (event.button === 2 ? 'Klik kanan' : 'Klik kiri')}</small>}</div>)}</>}</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSelectedRecord(null)}>Tutup</button></div></section></div>}
+      {selectedRecord && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedRecord(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">DETAIL REKAMAN</div><h2>{selectedRecord.title}</h2></div><button className="icon-button" onClick={() => setSelectedRecord(null)} aria-label="Tutup"><X size={19}/></button></div><div className="record-detail-summary"><div><span>Durasi aktif</span><b>{formatDuration(selectedRecord.duration_ms)}</b></div><div><span>Total aktivitas</span><b>{selectedRecord.event_count.toLocaleString('id-ID')}</b></div></div><div className="record-event-list">{detailLoading ? <div className="empty-state"><LoaderCircle className="spin" size={22}/>Memuat detail rekaman...</div> : <><div className="record-event-head"><b>Urutan aktivitas mouse</b><span>Menampilkan maksimal 200 aktivitas pertama</span></div>{(selectedRecord.events || []).slice(0, 200).map((event, index) => <div className="record-event-row" key={index}><span>{index + 1}</span><b>{event.type === 'move' ? 'Gerak mouse' : event.type === 'board' ? 'Kondisi papan' : event.type === 'game_step' ? 'Langkah permainan' : 'Klik'}</b><span>{formatDuration(event.elapsed_ms)}</span>{event.type === 'board' ? <span>{decodeBoardSnapshot(event.label)?.cards.length || 0} elemen kartu terdeteksi</span> : event.type === 'game_step' ? <span>{(() => { try { return JSON.parse(event.label || '').description || 'Langkah teramati'; } catch { return 'Langkah teramati'; } })()}</span> : <span>X: {Math.round(event.x)} · Y: {Math.round(event.y)}</span>}{(event.type === 'click' || event.type === 'game_step') && <small>{event.type === 'game_step' ? 'Disimpulkan dari perubahan kondisi papan, bukan dari gerakan mouse.' : event.label || (event.button === 2 ? 'Klik kanan' : 'Klik kiri')}</small>}</div>)}</>}</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSelectedRecord(null)}>Tutup</button></div></section></div>}
       {settingsOpen && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section className="settings-modal"><div className="modal-head"><div><div className="eyebrow">KONFIGURASI</div><h2>Pengaturan Website</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Tutup"><X size={19}/></button></div><p className="modal-copy">Tentukan alamat website yang akan dibuka pada browser internal GAME.</p><label className="field-label" htmlFor="target-url">URL Website Tujuan</label><input id="target-url" className="url-input" value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://contoh.com" onKeyDown={(e) => { if (e.key === 'Enter') void saveSettings(); }}/><div className="field-hint"><ShieldCheck size={14}/> Gunakan alamat lengkap dengan https:// atau http://</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSettingsOpen(false)}>Batal</button><button className="button button-primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} Simpan Pengaturan</button></div></section></div>}
-      {patternAlert && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPatternAlert(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">POLA PERMAINAN DITEMUKAN</div><h2>{patternAlert.status === 'completed' ? 'Pola pernah diselesaikan' : 'Pola pernah dimainkan'}</h2></div><button className="icon-button" onClick={() => setPatternAlert(null)} aria-label="Tutup"><X size={19}/></button></div><p className="modal-copy">Susunan kartu cocok dengan rekaman <b>{patternAlert.title}</b> pada menu Buka Data → {patternAlert.status === 'completed' ? 'Selesai' : 'Belum Selesai'}.</p>{patternAlert.status === 'completed' ? <><h3>Panduan langkah dari rekaman</h3>{patternAlert.steps.length ? <ol>{patternAlert.steps.map((step, index) => <li key={index}>{step}</li>)}</ol> : <p>Rekaman cocok, tetapi label langkah lama belum tersedia. Buka detail rekaman untuk melihat aktivitas yang tersimpan.</p>}</> : <><h3>Informasi kartu pada pola</h3><p>{patternAlert.cards.filter((card) => !card.faceUp).length} kartu masih tertutup/tidak terbaca dari pola ini.</p><ul>{patternAlert.cards.filter((card) => !card.faceUp).slice(0, 20).map((card, index) => <li key={index}>Posisi {card.slot}: kartu belum terbuka</li>)}</ul><p>Kartu tertutup hanya akan diberi identitas jika pernah terbuka dan terekam pada pola yang sama.</p></>}<div className="modal-actions"><button className="button button-primary" onClick={() => setPatternAlert(null)}>Mengerti</button></div></section></div>}
+      {patternAlert && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPatternAlert(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">POLA PERMAINAN DITEMUKAN</div><h2>{patternAlert.status === 'completed' ? 'Pola pernah diselesaikan' : 'Pola pernah dimainkan'}</h2></div><button className="icon-button" onClick={() => setPatternAlert(null)} aria-label="Tutup"><X size={19}/></button></div><p className="modal-copy">{patternAlert.certainty === 'exact' ? 'Identitas seluruh 52 kartu cocok' : 'Susunan kartu yang terlihat cocok sebagai kandidat, tetapi belum merupakan kecocokan pasti karena ada identitas kartu tertutup yang belum diketahui'} dengan rekaman <b>{patternAlert.title}</b> pada menu Buka Data → {patternAlert.status === 'completed' ? 'Selesai' : 'Belum Selesai'}.</p>{patternAlert.status === 'completed' ? <><h3>Langkah permainan yang berhasil diamati</h3>{patternAlert.steps.length ? <ol>{patternAlert.steps.map((step, index) => <li key={index}>{step}</li>)}</ol> : <p>Belum ada langkah terstruktur pada rekaman ini. Klik mouse lama tidak dianggap sebagai bukti pemindahan kartu.</p>}</> : <><h3>Informasi kartu pada pola</h3><p>{patternAlert.cards.filter((card) => !card.faceUp).length} kartu masih tertutup/tidak terbaca dari pola ini.</p><ul>{patternAlert.cards.filter((card) => !card.faceUp).slice(0, 20).map((card, index) => <li key={index}>Posisi {card.slot}: kartu belum terbuka</li>)}</ul><p>Kartu tertutup hanya akan diberi identitas jika pernah terbuka dan terekam pada pola yang sama.</p></>}<div className="modal-actions"><button className="button button-primary" onClick={() => setPatternAlert(null)}>Mengerti</button></div></section></div>}
       {notice && <div className="toast"><Check size={16}/>{notice}</div>}
     </div>
   );
