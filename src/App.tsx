@@ -3,7 +3,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import {
   Activity, ArrowUpRight, BookmarkPlus, Check, ChevronDown, Clock3,
   ExternalLink, Globe2, HardDrive, LoaderCircle, Maximize2, Menu,
-  MonitorPlay, MoreHorizontal, Plus, RefreshCw, Search, Settings2,
+  MonitorPlay, Plus, RefreshCw, Search, Settings2,
   ShieldCheck, Trash2, X
 } from 'lucide-react';
 
@@ -125,7 +125,7 @@ export default function App() {
           <button className={section === 'data' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('data'); setMobileNav(false); }}><HardDrive size={18}/><span>Buka Data</span>{records.length > 0 && <small>{records.length}</small>}</button>
         </nav>
         <div className="sidebar-bottom">
-          <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace pribadi</b><span>Pengaturan website terpusat</span></div></div>
+          <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Konfigurasi website terpusat</span></div></div>
           <button className="settings-link" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={17}/> Pengaturan <ChevronDown size={15}/></button>
           <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.0.0</span></div>
         </div>
