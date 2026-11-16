@@ -122,6 +122,8 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   let lastMoveAt = 0;
   let lastX = -10000;
   let lastY = -10000;
+  let dragStart = null;
+  let suppressClickUntil = 0;
   const send = (eventType, data = {}) => invoke('recording_event', {
     eventType,
     x: Number.isFinite(data.x) ? data.x : null,
@@ -144,6 +146,14 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       element.getAttribute('class'),
       element.className && typeof element.className === 'string' ? element.className : ''
     ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+  };
+  const cardLabelOf = (target) => {
+    if (!(target instanceof Element)) return '';
+    const card = target.closest('[class*="card"],[data-card],[data-testid*="card"],[aria-label*="card" i]');
+    if (!card) return '';
+    const description = labelOf(card);
+    const match = description.match(/(?:^|\\b)(ace|king|queen|jack|10|[2-9]|[AJQK])\\s*(?:of\\s*)?(spades?|hearts?|diamonds?|clubs?|♠|♥|♦|♣)(?:\\b|$)/i);
+    return match ? 'kartu ' + match[0].trim() : 'kartu (identitas belum terbaca)';
   };
   const isStartControl = (target) => {
     if (!(target instanceof Element)) return false;
@@ -199,7 +209,8 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   document.addEventListener('click', (event) => {
     const target = event.target;
     const control = target instanceof Element ? target.closest('button,[role="button"],a,[tabindex]') : null;
-    const label = control ? labelOf(control).slice(0, 120) : '';
+    const cardLabel = cardLabelOf(target);
+    const label = cardLabel ? 'Klik ' + cardLabel : control ? labelOf(control).slice(0, 120) : 'Klik area permainan';
     if (isStartControl(target)) {
       started = true;
       void send('start', { x: event.clientX, y: event.clientY, button: event.button, label })
@@ -223,13 +234,28 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       void send('give_up', input);
       return;
     }
-    if (started) void send('click', input);
+    if (started && Date.now() >= suppressClickUntil) void send('click', input);
   }, true);
   document.addEventListener('pointerdown', (event) => {
-    if (!started || event.button === 0) return;
+    if (!started) return;
     const target = event.target;
+    if (event.button === 0) {
+      dragStart = { x: event.clientX, y: event.clientY, card: cardLabelOf(target) };
+      return;
+    }
     const control = target instanceof Element ? target.closest('button,[role="button"],a,[tabindex]') : null;
-    void send('click', { x: event.clientX, y: event.clientY, button: event.button, label: control ? labelOf(control).slice(0, 120) : '' });
+    void send('click', { x: event.clientX, y: event.clientY, button: event.button, label: control ? labelOf(control).slice(0, 120) : 'Klik kanan area permainan' });
+  }, { capture: true, passive: true });
+  document.addEventListener('pointerup', (event) => {
+    if (!started || event.button !== 0 || !dragStart) return;
+    const source = dragStart;
+    dragStart = null;
+    if (Math.hypot(event.clientX - source.x, event.clientY - source.y) < 7) return;
+    const destination = cardLabelOf(event.target) || 'posisi tujuan';
+    suppressClickUntil = Date.now() + 800;
+    const label = 'Pindahkan ' + (source.card || 'kartu/objek') + ' ke ' + destination;
+    void send('click', { x: event.clientX, y: event.clientY, button: 0, label })
+      .then(() => window.setTimeout(captureBoard, 350));
   }, { capture: true, passive: true });
   document.addEventListener('pointermove', (event) => {
     if (!started) return;
