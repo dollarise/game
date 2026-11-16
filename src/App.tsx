@@ -12,7 +12,7 @@ import {
 
 type Section = 'browser' | 'data' | 'admin';
 type MouseEventData = { type: 'move' | 'click'; x: number; y: number; button?: number; elapsed_ms: number; label?: string };
-type SavedRecord = { id: string; title: string; duration_ms: number; event_count: number; events?: MouseEventData[]; recorded_at: string };
+type SavedRecord = { id: string; title: string; duration_ms: number; event_count: number; status: 'completed' | 'incomplete'; events?: MouseEventData[]; recorded_at: string };
 
 const DEFAULT_URL = 'https://1xlite-6487.com/en/games/solitaire';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -41,6 +41,7 @@ export default function App() {
   const [targetUrl, setTargetUrl] = useState(DEFAULT_URL);
   const [urlDraft, setUrlDraft] = useState(DEFAULT_URL);
   const [records, setRecords] = useState<SavedRecord[]>([]);
+  const [dataTab, setDataTab] = useState<'completed' | 'incomplete'>('completed');
   const [selectedRecord, setSelectedRecord] = useState<SavedRecord | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -52,6 +53,8 @@ export default function App() {
   const [mobileNav, setMobileNav] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState<'waiting' | 'recording' | 'paused'>('waiting');
   const [recordingEvents, setRecordingEvents] = useState<MouseEventData[]>([]);
+  const recordingEventsRef = useRef<MouseEventData[]>([]);
+  const autoStopRecordingRef = useRef<() => void>(() => undefined);
   const [elapsedMs, setElapsedMs] = useState(0);
   const recordingStartedAt = useRef<number | null>(null);
   const recordingSessionActive = useRef(false);
@@ -73,7 +76,7 @@ export default function App() {
       setLoading(true);
       const [{ data: setting, error: settingError }, { data: rows, error: rowsError }] = await Promise.all([
         db!.from('game_settings').select('target_url').eq('user_id', session!.user.id).maybeSingle(),
-        db!.from('game_mouse_recordings').select('id,title,duration_ms,event_count,recorded_at').eq('user_id', session!.user.id).order('recorded_at', { ascending: false }).limit(250),
+        db!.from('game_mouse_recordings').select('id,title,duration_ms,event_count,status,recorded_at').eq('user_id', session!.user.id).order('recorded_at', { ascending: false }).limit(250),
       ]);
       if (!active) return;
       if (settingError || rowsError) ping('Gagal memuat data akun: ' + (settingError?.message || rowsError?.message));
@@ -103,11 +106,13 @@ export default function App() {
     let active = true;
     let unlistenStart: (() => void) | undefined;
     let unlistenInput: (() => void) | undefined;
+    let unlistenAutoStop: (() => void) | undefined;
     void listen('recording-auto-start', () => {
       if (!active || recordingSessionActive.current) return;
       recordingSessionActive.current = true;
       accumulatedMs.current = 0;
       recordingStartedAt.current = Date.now();
+      recordingEventsRef.current = [];
       setElapsedMs(0);
       setRecordingEvents([]);
       setRecordingStatus('recording');
@@ -117,14 +122,19 @@ export default function App() {
     void listen<Omit<MouseEventData, 'elapsed_ms'> & { type: 'move' | 'click' }>('recording-input', (event) => {
       if (!active || recordingStartedAt.current === null) return;
       const elapsed = accumulatedMs.current + Date.now() - recordingStartedAt.current;
-      setRecordingEvents((old) => [...old, { ...event.payload, elapsed_ms: Math.round(elapsed) }]);
+      const nextEvents = [...recordingEventsRef.current, { ...event.payload, elapsed_ms: Math.round(elapsed) }];
+      recordingEventsRef.current = nextEvents;
+      setRecordingEvents(nextEvents);
     }).then((stop) => { if (active) unlistenInput = stop; else stop(); });
-    return () => { active = false; unlistenStart?.(); unlistenInput?.(); };
+    void listen('recording-auto-stop', () => {
+      if (active) autoStopRecordingRef.current();
+    }).then((stop) => { if (active) unlistenAutoStop = stop; else stop(); });
+    return () => { active = false; unlistenStart?.(); unlistenInput?.(); unlistenAutoStop?.(); };
   }, []);
 
   const filteredRecords = useMemo(() => records.filter((item) =>
-    (item.title + ' ' + new Date(item.recorded_at).toLocaleString('id-ID')).toLowerCase().includes(search.toLowerCase())
-  ), [records, search]);
+    item.status === dataTab && (item.title + ' ' + new Date(item.recorded_at).toLocaleString('id-ID')).toLowerCase().includes(search.toLowerCase())
+  ), [records, search, dataTab]);
 
   function ping(message: string) {
     setNotice(message);
@@ -186,21 +196,30 @@ export default function App() {
     setRecordingStatus('recording');
   }
 
-  async function stopRecording() {
+  async function stopRecording(status: 'completed' | 'incomplete' = 'completed') {
     if (!db || !session || recordingStatus === 'waiting' || savingRecord) return;
     if (recordingStartedAt.current !== null) {
       accumulatedMs.current += Date.now() - recordingStartedAt.current;
       recordingStartedAt.current = null;
     }
     const duration = accumulatedMs.current;
-    const events = recordingEvents;
-    if (events.length === 0) { recordingSessionActive.current = false; setRecordingStatus('waiting'); setElapsedMs(0); accumulatedMs.current = 0; ping('Tidak ada aktivitas mouse yang terekam.'); return; }
+    const events = recordingEventsRef.current;
+    if (events.length === 0) {
+      recordingSessionActive.current = false;
+      setRecordingStatus('waiting');
+      setElapsedMs(0);
+      accumulatedMs.current = 0;
+      recordingEventsRef.current = [];
+      setRecordingEvents([]);
+      ping('Tidak ada aktivitas mouse yang terekam.');
+      return;
+    }
     setSavingRecord(true);
     const recordedAt = new Date().toISOString();
     const title = 'Solitaire - ' + new Date(recordedAt).toLocaleString('id-ID');
     const { data, error } = await db.from('game_mouse_recordings')
-      .insert({ user_id: session.user.id, title, duration_ms: Math.round(duration), event_count: events.length, events })
-      .select('id,title,duration_ms,event_count,recorded_at').single();
+      .insert({ user_id: session.user.id, title, duration_ms: Math.round(duration), event_count: events.length, events, status })
+      .select('id,title,duration_ms,event_count,status,recorded_at').single();
     setSavingRecord(false);
     if (error) {
       setRecordingStatus('paused');
@@ -211,12 +230,16 @@ export default function App() {
     setRecords((old) => [data as SavedRecord, ...old]);
     recordingSessionActive.current = false;
     setRecordingStatus('waiting');
+    recordingEventsRef.current = [];
     setRecordingEvents([]);
     setElapsedMs(0);
     accumulatedMs.current = 0;
     recordingStartedAt.current = null;
-    ping('Rekaman berhasil disimpan ke Buka Data.');
+    ping(status === 'incomplete'
+      ? 'Give up terdeteksi. Rekaman disimpan ke Buka Data > Belum Selesai.'
+      : 'Rekaman berhasil disimpan ke Buka Data.');
   }
+  autoStopRecordingRef.current = () => { void stopRecording('incomplete'); };
 
   async function signOut() {
     if (!db) return;
@@ -259,9 +282,9 @@ export default function App() {
             <>
               <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Seluruh hasil rekaman gerakan dan klik mouse pada Solitaire.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Kembali ke Rekam</button></div>
               <div className="data-summary"><div className="summary-icon"><BookmarkPlus size={19}/></div><div><span>Total sesi rekaman tersimpan</span><b>{records.length} <small>sesi</small></b></div><div className="summary-divider"/><div className="summary-meta"><span>Rekaman terakhir</span><b>{records[0] ? new Date(records[0].recorded_at).toLocaleString('id-ID') : 'Belum ada data'}</b></div></div>
-              <div className="data-panel"><div className="panel-heading"><div><h2>Rekaman Solitaire</h2><span>Data aktivitas mouse tersimpan per sesi, terpisah untuk setiap akun</span></div><div className="search-box"><Search size={16}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari sesi rekaman..."/></div></div>
+              <div className="data-panel"><div className="panel-heading"><div><h2>Rekaman Solitaire</h2><span>Data aktivitas mouse tersimpan per sesi, terpisah untuk setiap akun</span></div><div className="search-box"><Search size={16}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari sesi rekaman..."/></div></div><div className="data-tabs"><button className={dataTab === 'completed' ? 'data-tab active' : 'data-tab'} onClick={() => setDataTab('completed')}>Selesai <span>{records.filter((item) => item.status === 'completed').length}</span></button><button className={dataTab === 'incomplete' ? 'data-tab active' : 'data-tab'} onClick={() => setDataTab('incomplete')}>Belum Selesai <span>{records.filter((item) => item.status === 'incomplete').length}</span></button></div>
                 {loading ? <div className="empty-state"><LoaderCircle className="spin" size={25}/><span>Memuat data...</span></div> : filteredRecords.length === 0 ? <div className="empty-state"><div className="empty-icon"><HardDrive size={23}/></div><b>{search ? 'Data tidak ditemukan' : 'Belum ada rekaman tersimpan'}</b><span>{search ? 'Coba kata kunci lain.' : 'Buka menu Rekam, lalu klik Play / Start Game di dalam Solitaire.'}</span>{!search && <button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}>Buka Rekam</button>}</div> :
-                <div className="record-list">{filteredRecords.map((item) => <div className="record-row" key={item.id}><div className="record-site-icon"><MonitorPlay size={18}/></div><div className="record-main"><b>{item.title}</b><span>{formatDuration(item.duration_ms)} · {item.event_count.toLocaleString('id-ID')} aktivitas mouse</span><small>{new Date(item.recorded_at).toLocaleString('id-ID')}</small></div><button className="button button-secondary" onClick={() => void openRecord(item)} title="Buka data rekaman">Buka Data</button><button className="icon-button danger-hover" onClick={() => void deleteRecord(item.id)} title="Hapus rekaman"><Trash2 size={16}/></button></div>)}</div>}
+                <div className="record-list">{filteredRecords.map((item) => <div className="record-row" key={item.id}><div className="record-site-icon"><MonitorPlay size={18}/></div><div className="record-main"><b>{item.title}</b>{item.status === 'incomplete' && <small className="record-status-incomplete">Belum Selesai · Give up</small>}<span>{formatDuration(item.duration_ms)} · {item.event_count.toLocaleString('id-ID')} aktivitas mouse</span><small>{new Date(item.recorded_at).toLocaleString('id-ID')}</small></div><button className="button button-secondary" onClick={() => void openRecord(item)} title="Buka data rekaman">Buka Data</button><button className="icon-button danger-hover" onClick={() => void deleteRecord(item.id)} title="Hapus rekaman"><Trash2 size={16}/></button></div>)}</div>}
               </div>
             </>
           ) : isSuperAdmin ? <AdminPanel db={db} session={session} ping={ping} /> : <div className="empty-state"><Shield size={24}/><b>Akses ditolak</b><span>Menu ini hanya tersedia untuk Super Admin.</span></div>}
