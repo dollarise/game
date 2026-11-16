@@ -13,7 +13,7 @@ jobs:
     runs-on: windows-latest
     env:
       VITE_SUPABASE_URL: https://ufnpohdmrndxtycnwkfa.supabase.co
-      VITE_SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVmbnBvaGRtcm5keHR5Y253a2ZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4MjE5NjAsImV4cCI6MjExMDM5Nzk2MH0.O2Yl-TvnndHcorq6_idMLKGvFajCr4665vH4OYI6Y54
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,6 +22,36 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Setup Python for icon repair
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Normalize Windows ICO resource
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check Pillow
+          @'
+          from pathlib import Path
+          from PIL import Image
+
+          icon_path = Path("src-tauri/icons/icon.ico")
+          with Image.open(icon_path) as source:
+              rgba = source.convert("RGBA")
+              rgba.save(
+                  icon_path,
+                  format="ICO",
+                  sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+              )
+
+          # Re-open the generated ICO and verify its directory entries.
+          with Image.open(icon_path) as check:
+              assert check.format == "ICO", f"Unexpected format: {check.format}"
+              assert check.size[0] > 0 and check.size[1] > 0
+              print(f"Validated Windows icon: {check.format}, {check.size}")
+          '@ | Set-Content -Encoding utf8 repair_icon.py
+          python repair_icon.py
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
