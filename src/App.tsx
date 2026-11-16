@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   Activity, ArrowUpRight, BookmarkPlus, Check, ChevronDown, Clock3,
   ExternalLink, Globe2, HardDrive, LoaderCircle, Maximize2, Menu,
