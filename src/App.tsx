@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -291,9 +291,13 @@ function BrowserFrame({ url, onNavigate, onSave }: { url: string; onNavigate: (u
   const [reloadKey, setReloadKey] = useState(0);
   const [history, setHistory] = useState<string[]>([url]);
   const [historyIndex, setHistoryIndex] = useState(0);
+  const lastPropUrl = useRef(url);
 
   useEffect(() => {
-    setAddress(url); setCurrentUrl(url); setHistory([url]); setHistoryIndex(0);
+    if (url !== lastPropUrl.current) {
+      lastPropUrl.current = url;
+      setAddress(url); setCurrentUrl(url); setHistory([url]); setHistoryIndex(0);
+    }
   }, [url]);
 
   function navigate(value: string, addHistory = true) {
@@ -301,6 +305,7 @@ function BrowserFrame({ url, onNavigate, onSave }: { url: string; onNavigate: (u
     if (!/^https?:\/\//i.test(next)) next = 'https://' + next;
     if (!validUrl(next)) return;
     next = new URL(next).toString();
+    lastPropUrl.current = next;
     setCurrentUrl(next); setAddress(next);
     if (addHistory) {
       const nextHistory = [...history.slice(0, historyIndex + 1), next];
