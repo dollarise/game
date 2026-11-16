@@ -301,6 +301,7 @@ async function ensureDesktopBrowser(url: string): Promise<Webview> {
       height: 1,
       focus: false,
       dragDropEnabled: false,
+      dataDirectory: 'browser-profile',
     });
 
     await new Promise<void>((resolve, reject) => {
