@@ -19,6 +19,11 @@ export type InferredGameStep = {
 };
 
 const UNKNOWN_CODES = new Set(['', 'UNKNOWN', 'BACK', 'KARTU_TERTUTUP']);
+const CARD_CODE_PATTERN = /^(?:A|[2-9]|10|J|Q|K)[CDHS]$/;
+
+function isValidCardCode(value: string): boolean {
+  return CARD_CODE_PATTERN.test(value.trim().toUpperCase());
+}
 
 export function decodeBoardSnapshot(label?: string): BoardSnapshot | null {
   try {
@@ -44,7 +49,7 @@ function knownFaceUpCards(snapshot: BoardSnapshot): Map<string, string[]> {
   const locations = new Map<string, string[]>();
   for (const card of snapshot.cards) {
     const code = card.code.trim().toUpperCase();
-    if (!card.faceUp || UNKNOWN_CODES.has(code)) continue;
+    if (!card.faceUp || UNKNOWN_CODES.has(code) || !isValidCardCode(code)) continue;
     const slots = locations.get(code) || [];
     slots.push(card.slot);
     locations.set(code, slots);
@@ -113,8 +118,12 @@ export function inferGameStep(
  * two deals are identical while any card identity remains hidden/unknown.
  */
 export function patternCertainty(snapshot: BoardSnapshot): 'exact' | 'partial' {
+  // A card is known only when its face is visibly up and its identity is a
+  // valid standard playing-card code. Never count hidden DOM metadata.
   const known = snapshot.cards.filter((card) =>
-    !UNKNOWN_CODES.has(card.code.trim().toUpperCase())
+    card.faceUp &&
+    !UNKNOWN_CODES.has(card.code.trim().toUpperCase()) &&
+    isValidCardCode(card.code)
   );
   const uniqueCodes = new Set(known.map((card) => card.code.trim().toUpperCase()));
   return snapshot.cards.length === 52 && known.length === 52 && uniqueCodes.size === 52
