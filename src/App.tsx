@@ -395,7 +395,7 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
       onNavigate(nextUrl);
     }).then((stop) => { if (active) unlisten = stop; else stop(); });
     return () => { active = false; unlisten?.(); };
-  }, [desktop, onNavigate]);
+  }, [desktop]);
 
   useEffect(() => {
     if (!desktop) return;
