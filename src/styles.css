@@ -22,3 +22,30 @@
 .auth-message{color:#a6f0d2;background:#152b2a;border:1px solid #2c6257}
 .auth-private{display:flex;align-items:center;gap:7px;border-top:1px solid #26364d;padding-top:17px;margin-top:23px;color:#7185a3;font-size:9px}
 @media(max-width:480px){.auth-card{padding:24px 20px}.auth-brand{margin-bottom:28px}.auth-card h1{font-size:22px}}
+
+
+/* Super Admin user management */
+.admin-users{display:grid;gap:17px}
+.admin-create{margin-top:-4px}
+.admin-form-grid{display:grid;grid-template-columns:1.2fr 1.2fr .8fr auto;gap:13px;align-items:end;padding:17px 19px 19px}
+.admin-form-grid .field-label{margin-bottom:7px}
+.admin-form-action{display:flex;align-items:end}
+.admin-tools{display:flex;align-items:center;gap:8px}
+.admin-user-list{display:grid}
+.admin-user-row{min-height:70px;padding:12px 17px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #1e2a3d}
+.admin-user-row:last-child{border-bottom:0}
+.admin-user-avatar{width:35px;height:35px;flex:0 0 35px;border-radius:10px;background:#1c3558;color:#9dc1ff;display:grid;place-items:center;font:700 13px Manrope}
+.admin-user-main{min-width:0;flex:1}
+.admin-user-main b,.admin-user-main span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.admin-user-main b{font-size:11px;color:#dce6f5}
+.admin-user-main b small{font-size:9px;color:#82adf5;font-weight:500}
+.admin-user-main span{font-size:9px;color:#7b8aa2;margin-top:5px}
+.admin-status{font-size:9px;font-weight:700;padding:5px 8px;border-radius:20px;white-space:nowrap}
+.admin-status.active{color:#79ddb9;background:#15372f}
+.admin-status.inactive{color:#f1a4ab;background:#3a202b}
+.admin-role-select{height:32px;max-width:130px;border:1px solid #2b3a50;background:#0d1523;border-radius:7px;color:#cbd7e9;padding:0 8px;font-size:10px}
+.admin-toggle{height:32px;padding:0 9px;font-size:9px}
+.admin-error{margin:0}
+.admin-footnote{display:flex;align-items:center;gap:7px;color:#7486a2;font-size:10px;line-height:1.6;margin:0}
+@media(max-width:900px){.admin-form-grid{grid-template-columns:1fr 1fr}.admin-form-action{align-self:end}}
+@media(max-width:700px){.admin-user-row{flex-wrap:wrap;gap:8px}.admin-user-main{min-width:calc(100% - 55px)}.admin-status{margin-left:43px}.admin-role-select{margin-left:auto;max-width:115px}.admin-toggle{padding:0 7px}.admin-form-grid{grid-template-columns:1fr}.admin-tools{width:100%}.admin-tools .search-box{flex:1}.admin-users .page-heading>.button{align-self:stretch}}
