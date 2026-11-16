@@ -1,8 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use tauri::{AppHandle, Emitter, Manager};
+use tauri::webview::Webview;
 
-fn browser_view(app: &AppHandle) -> Result<tauri::Webview, String> {
+fn browser_view(app: &AppHandle) -> Result<Webview, String> {
     app.get_webview("game-browser")
         .ok_or_else(|| "Browser internal belum siap.".to_string())
 }
@@ -18,12 +19,20 @@ fn browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
 
 #[tauri::command]
 fn browser_back(app: AppHandle) -> Result<(), String> {
-    browser_view(&app)?.go_back().map_err(|error| error.to_string())
+    let view = browser_view(&app)?;
+    if view.can_go_back().map_err(|error| error.to_string())? {
+        view.go_back().map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
 fn browser_forward(app: AppHandle) -> Result<(), String> {
-    browser_view(&app)?.go_forward().map_err(|error| error.to_string())
+    let view = browser_view(&app)?;
+    if view.can_go_forward().map_err(|error| error.to_string())? {
+        view.go_forward().map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
