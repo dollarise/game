@@ -56,6 +56,7 @@ export default function App() {
   const recordingEventsRef = useRef<MouseEventData[]>([]);
   const recordingSaveStatusRef = useRef<'completed' | 'incomplete'>('completed');
   const autoStopRecordingRef = useRef<() => void>(() => undefined);
+  const autoCompleteRecordingRef = useRef<() => void>(() => undefined);
   const [elapsedMs, setElapsedMs] = useState(0);
   const recordingStartedAt = useRef<number | null>(null);
   const recordingSessionActive = useRef(false);
@@ -108,6 +109,7 @@ export default function App() {
     let unlistenStart: (() => void) | undefined;
     let unlistenInput: (() => void) | undefined;
     let unlistenAutoStop: (() => void) | undefined;
+    let unlistenAutoComplete: (() => void) | undefined;
     void listen('recording-auto-start', () => {
       if (!active || recordingSessionActive.current) return;
       recordingSessionActive.current = true;
@@ -131,7 +133,10 @@ export default function App() {
     void listen('recording-auto-stop', () => {
       if (active) autoStopRecordingRef.current();
     }).then((stop) => { if (active) unlistenAutoStop = stop; else stop(); });
-    return () => { active = false; unlistenStart?.(); unlistenInput?.(); unlistenAutoStop?.(); };
+    void listen('recording-auto-complete', () => {
+      if (active) autoCompleteRecordingRef.current();
+    }).then((stop) => { if (active) unlistenAutoComplete = stop; else stop(); });
+    return () => { active = false; unlistenStart?.(); unlistenInput?.(); unlistenAutoStop?.(); unlistenAutoComplete?.(); };
   }, []);
 
   const filteredRecords = useMemo(() => records.filter((item) =>
@@ -242,9 +247,10 @@ export default function App() {
     recordingSaveStatusRef.current = 'completed';
     ping(saveStatus === 'incomplete'
       ? 'Give up terdeteksi. Rekaman disimpan ke Buka Data > Belum Selesai.'
-      : 'Rekaman berhasil disimpan ke Buka Data.');
+      : 'Rekaman berhasil disimpan ke Buka Data > Selesai.');
   }
   autoStopRecordingRef.current = () => { void stopRecording('incomplete'); };
+  autoCompleteRecordingRef.current = () => { void stopRecording('completed'); };
 
   async function signOut() {
     if (!db) return;
@@ -269,7 +275,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Rekam aktivitas mouse Solitaire</span></div></div>
           <button className="settings-link" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={17}/> Pengaturan <ChevronDown size={15}/></button>
-          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.1.9</span></div>
+          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.2.0</span></div>
         </div>
       </aside>
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
