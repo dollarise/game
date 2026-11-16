@@ -129,15 +129,17 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       element.getAttribute('data-testid'),
       element.getAttribute('data-icon'),
       element.getAttribute('data-lucide'),
+      element.getAttribute('alt'),
+      element.getAttribute('src'),
       element.getAttribute('class'),
       element.className && typeof element.className === 'string' ? element.className : ''
     ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
   };
   const isStartControl = (target) => {
     if (!(target instanceof Element)) return false;
-    const control = target.closest('button,[role="button"],a,[tabindex]');
+    const control = target.closest('button,[role="button"],a,[tabindex],[class*="play"],[class*="start"]');
     if (!control) return false;
-    const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg'))).toLowerCase();
+    const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg')) + ' ' + labelOf(control.querySelector('img'))).toLowerCase();
     return /\b(play|start|new game|play now)\b/.test(description);
   };
   document.addEventListener('click', (event) => {
