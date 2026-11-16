@@ -41,6 +41,8 @@ function formatDuration(milliseconds: number) {
 export default function App() {
   const [section, setSection] = useState<Section>('browser');
   const [session, setSession] = useState<Session | null>(null);
+  const sessionRef = useRef<Session | null>(null);
+  sessionRef.current = session;
   const [authReady, setAuthReady] = useState(false);
   const [targetUrl, setTargetUrl] = useState(DEFAULT_URL);
   const [urlDraft, setUrlDraft] = useState(DEFAULT_URL);
@@ -139,9 +141,11 @@ export default function App() {
         const snapshot = decodeBoard(payload.label);
         if (snapshot && snapshot.cards.length > 0 && !boardMatchChecked.current && db && session) {
           boardMatchChecked.current = true;
+          const currentSession = sessionRef.current;
+          if (!currentSession) return;
           const { data } = await db.from('game_mouse_recordings')
             .select('id,title,status,events,recorded_at')
-            .eq('user_id', session.user.id)
+            .eq('user_id', currentSession.user.id)
             .order('recorded_at', { ascending: false }).limit(250);
           if (!active) return;
           const match = (data || []).map((row: any) => {
