@@ -1,25 +1,29 @@
 # Game — Website Workspace
 
-A lightweight browser workspace with two sections: **Rekam** and **Buka Data**. The target website URL is configurable in Settings and stored in Supabase.
+A browser workspace with two sections: **Rekam** and **Buka Data**. Each user signs in with email and password, and their target website setting and saved records are isolated from other users by Supabase Row Level Security.
 
-## Stack
+## Features
 
-- Vite + React + TypeScript
-- Supabase for the shared target URL and saved browsing records
-- Cloudflare Pages deployment is intentionally deferred until the repository and database are ready.
+- Email/password sign-in, account registration, password reset, and sign-out
+- Configurable target website URL (default: https://1xlite-6487.com/)
+- Record and manage saved website addresses
+- Per-user settings and records protected by Supabase RLS
+- Responsive Vite + React + TypeScript interface
 
 ## Local development
 
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev
 ```
 
-Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local`. Without them, the app uses browser local storage for the target URL and records.
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (Supabase publishable/anon key) in `.env.local`.
 
-## Important browser limitation
+## Supabase Auth configuration
+
+Enable Email provider in Supabase Authentication. If email confirmation is enabled, a new user must confirm their email before signing in. Add the local and deployed app URLs to Supabase Auth URL Configuration (Site URL and Redirect URLs) so password reset links can return to the app.
+
+## Browser limitation
 
 The Rekam view uses an iframe when the target site permits embedding. Some sites prohibit framing with `X-Frame-Options` or Content Security Policy; the app then offers to open the target in a normal browser tab. It does not bypass those site security controls.
-## Data access note before public deployment
-
-The current starter migration grants anonymous browser access to the shared settings and records tables so the no-login prototype can work. This means anyone who can reach the deployed app (or its public Supabase API) may read or change the shared target URL and records. Do not use this access model for private or sensitive data. Before public deployment, replace the anonymous write access with a server-side protected endpoint or choose an authentication/access-control design.
