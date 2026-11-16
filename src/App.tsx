@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
+import { Webview } from '@tauri-apps/api/webview';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import {
   ArrowLeft, ArrowRight, ArrowUpRight, BookmarkPlus, Check, ChevronDown, Clock3,
@@ -274,44 +278,176 @@ function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Sessio
   </section>;
 }
 
+let desktopBrowserView: Webview | null = null;
+let desktopBrowserCreation: Promise<Webview> | null = null;
+
+async function ensureDesktopBrowser(url: string): Promise<Webview> {
+  if (desktopBrowserView) return desktopBrowserView;
+  if (desktopBrowserCreation) return desktopBrowserCreation;
+
+  desktopBrowserCreation = (async () => {
+    const existing = await Webview.getByLabel('game-browser');
+    if (existing) {
+      desktopBrowserView = existing;
+      return existing;
+    }
+
+    const view = new Webview(getCurrentWindow(), 'game-browser', {
+      url,
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      focus: false,
+      dragDropEnabled: false,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      void view.once('tauri://created', () => resolve());
+      void view.once('tauri://error', (event) => reject(new Error(String(event.payload))));
+    });
+
+    desktopBrowserView = view;
+    return view;
+  })();
+
+  try {
+    return await desktopBrowserCreation;
+  } finally {
+    desktopBrowserCreation = null;
+  }
+}
+
 function BrowserFrame({ url, onNavigate, onSave }: { url: string; onNavigate: (url: string) => void; onSave: (url: string) => void }) {
+  const desktop = isTauri();
   const [address, setAddress] = useState(url);
   const [currentUrl, setCurrentUrl] = useState(url);
   const [reloadKey, setReloadKey] = useState(0);
   const [history, setHistory] = useState<string[]>([url]);
   const [historyIndex, setHistoryIndex] = useState(0);
+  const [nativeReady, setNativeReady] = useState(false);
+  const [nativeError, setNativeError] = useState('');
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<Webview | null>(null);
   const lastPropUrl = useRef(url);
 
   useEffect(() => {
     if (url !== lastPropUrl.current) {
       lastPropUrl.current = url;
-      setAddress(url); setCurrentUrl(url); setHistory([url]); setHistoryIndex(0);
+      setAddress(url);
+      setCurrentUrl(url);
+      setHistory([url]);
+      setHistoryIndex(0);
+      if (desktop && desktopBrowserView) {
+        void invoke('browser_navigate', { url }).catch((error) => setNativeError(String(error)));
+      }
     }
-  }, [url]);
+  }, [url, desktop]);
 
-  function navigate(value: string, addHistory = true) {
+  useEffect(() => {
+    if (!desktop) return;
+    let disposed = false;
+    let observer: ResizeObserver | null = null;
+
+    const syncBounds = async () => {
+      const element = viewportRef.current;
+      const view = viewRef.current;
+      if (!element || !view || disposed) return;
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2) {
+        await view.hide();
+        return;
+      }
+      await view.setPosition(new LogicalPosition(Math.max(0, rect.left), Math.max(0, rect.top)));
+      await view.setSize(new LogicalSize(rect.width, rect.height));
+      await view.show();
+    };
+
+    const onLayout = () => { void syncBounds().catch((error) => setNativeError(String(error))); };
+
+    const initialize = async () => {
+      const view = await ensureDesktopBrowser(currentUrl);
+      if (disposed) {
+        await view.hide();
+        return;
+      }
+      viewRef.current = view;
+      await syncBounds();
+      if (!disposed) setNativeReady(true);
+    };
+
+    void initialize().catch((error) => setNativeError(String(error)));
+    window.addEventListener('resize', onLayout);
+    window.addEventListener('scroll', onLayout, true);
+    if (viewportRef.current && typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(onLayout);
+      observer.observe(viewportRef.current);
+    }
+
+    return () => {
+      disposed = true;
+      observer?.disconnect();
+      window.removeEventListener('resize', onLayout);
+      window.removeEventListener('scroll', onLayout, true);
+      if (viewRef.current) void viewRef.current.hide();
+    };
+  }, [desktop]);
+
+  async function navigate(value: string, addHistory = true) {
     let next = value.trim();
     if (!/^https?:\/\//i.test(next)) next = 'https://' + next;
     if (!validUrl(next)) return;
     next = new URL(next).toString();
     lastPropUrl.current = next;
-    setCurrentUrl(next); setAddress(next);
+    setCurrentUrl(next);
+    setAddress(next);
+
     if (addHistory) {
       const nextHistory = [...history.slice(0, historyIndex + 1), next];
-      setHistory(nextHistory); setHistoryIndex(nextHistory.length - 1);
+      setHistory(nextHistory);
+      setHistoryIndex(nextHistory.length - 1);
+    }
+
+    if (desktop) {
+      try {
+        await invoke('browser_navigate', { url: next });
+      } catch (error) {
+        setNativeError(String(error));
+      }
+    } else {
+      setReloadKey((value) => value + 1);
     }
     onNavigate(next);
   }
 
   function goBack() {
+    if (desktop) {
+      void invoke('browser_back').catch((error) => setNativeError(String(error)));
+      return;
+    }
     if (historyIndex <= 0) return;
     const nextIndex = historyIndex - 1;
-    setHistoryIndex(nextIndex); navigate(history[nextIndex], false);
+    setHistoryIndex(nextIndex);
+    void navigate(history[nextIndex], false);
   }
+
   function goForward() {
+    if (desktop) {
+      void invoke('browser_forward').catch((error) => setNativeError(String(error)));
+      return;
+    }
     if (historyIndex >= history.length - 1) return;
     const nextIndex = historyIndex + 1;
-    setHistoryIndex(nextIndex); navigate(history[nextIndex], false);
+    setHistoryIndex(nextIndex);
+    void navigate(history[nextIndex], false);
+  }
+
+  function reload() {
+    if (desktop) {
+      void invoke('browser_reload').catch((error) => setNativeError(String(error)));
+    } else {
+      setReloadKey((value) => value + 1);
+    }
   }
 
   return (
@@ -319,17 +455,25 @@ function BrowserFrame({ url, onNavigate, onSave }: { url: string; onNavigate: (u
       <div className="browser-shell">
         <div className="browser-chrome">
           <div className="browser-controls">
-            <button className="icon-button" onClick={goBack} disabled={historyIndex <= 0} title="Kembali"><ArrowLeft size={16}/></button>
-            <button className="icon-button" onClick={goForward} disabled={historyIndex >= history.length - 1} title="Maju"><ArrowRight size={16}/></button>
-            <button className="icon-button" onClick={() => setReloadKey(v => v + 1)} title="Muat ulang"><RefreshCw size={15}/></button>
+            <button className="icon-button" onClick={goBack} disabled={!desktop && historyIndex <= 0} title="Kembali"><ArrowLeft size={16}/></button>
+            <button className="icon-button" onClick={goForward} disabled={!desktop && historyIndex >= history.length - 1} title="Maju"><ArrowRight size={16}/></button>
+            <button className="icon-button" onClick={reload} title="Muat ulang"><RefreshCw size={15}/></button>
           </div>
-          <form className="browser-address-form" onSubmit={e => { e.preventDefault(); navigate(address); }}>
-            <Globe2 size={14}/><input aria-label="Alamat website" value={address} onChange={e => setAddress(e.target.value)} spellCheck={false}/>
+          <form className="browser-address-form" onSubmit={(event) => { event.preventDefault(); void navigate(address); }}>
+            <Globe2 size={14}/><input aria-label="Alamat website" value={address} onChange={(event) => setAddress(event.target.value)} spellCheck={false}/>
             <button type="submit">Buka</button>
           </form>
           <button className="icon-button browser-save" onClick={() => onSave(currentUrl)} title="Simpan alamat ke Buka Data"><BookmarkPlus size={16}/></button>
         </div>
-        <div className="browser-viewport"><iframe key={reloadKey} title="Browser GAME" src={currentUrl} allow="clipboard-read; clipboard-write; fullscreen; autoplay" referrerPolicy="strict-origin-when-cross-origin"/></div>
+        <div className="browser-viewport" ref={viewportRef}>
+          {desktop ? (
+            <div className="native-browser-placeholder">
+              {nativeError ? <span>Browser desktop gagal dijalankan: {nativeError}</span> : !nativeReady ? <span>Menyiapkan browser internal...</span> : null}
+            </div>
+          ) : (
+            <iframe key={reloadKey} title="Browser GAME" src={currentUrl} allow="clipboard-read; clipboard-write; fullscreen; autoplay" referrerPolicy="strict-origin-when-cross-origin"/>
+          )}
+        </div>
       </div>
     </section>
   );
