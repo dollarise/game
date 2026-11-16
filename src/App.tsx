@@ -19,9 +19,18 @@ type SavedRecord = { id: string; title: string; url: string; recorded_at: string
 const DEFAULT_URL = 'https://1xlite-6487.com/';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+// Supabase Auth is the source of truth for accounts and sessions.
+// Keep the SDK's default storage key stable so existing signed-in users
+// remain signed in after an application upgrade.
 const db: SupabaseClient | null = supabaseUrl && supabaseKey
-  ? createClient(supabaseUrl, supabaseKey)
-  : null;
+ ? createClient(supabaseUrl, supabaseKey, {
+     auth: {
+       persistSession: true,
+       autoRefreshToken: true,
+       detectSessionInUrl: true,
+     },
+   })
+ : null;
 
 function validUrl(value: string) {
   try {
@@ -87,11 +96,6 @@ export default function App() {
     (item.title + ' ' + item.url).toLowerCase().includes(search.toLowerCase())
   ), [records, search]);
 
-  function readLocalRecords(): SavedRecord[] {
-    try { return JSON.parse(localStorage.getItem('game.records') || '[]') as SavedRecord[]; }
-    catch { return []; }
-  }
-
   function ping(message: string) {
     setNotice(message);
     window.setTimeout(() => setNotice(''), 2800);
@@ -101,7 +105,6 @@ export default function App() {
     if (!validUrl(urlDraft.trim())) { ping('Masukkan alamat website yang valid (http/https).'); return; }
     setSaving(true);
     const next = new URL(urlDraft.trim()).toString();
-    localStorage.setItem('game.targetUrl', next);
     if (db) {
       const { error } = await db.from('game_settings').upsert({ user_id: session!.user.id, target_url: next, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
       if (error) { setSaving(false); ping('Gagal menyimpan ke database: ' + error.message); return; }
@@ -117,7 +120,6 @@ export default function App() {
     }
     const next = records.filter((item) => item.id !== id);
     setRecords(next);
-    if (!db) localStorage.setItem('game.records', JSON.stringify(next));
   }
 
 
@@ -125,7 +127,6 @@ export default function App() {
   async function navigateTarget(nextUrl: string) {
     setTargetUrl(nextUrl);
     setUrlDraft(nextUrl);
-    localStorage.setItem('game.targetUrl', nextUrl);
     if (db) {
       const { error } = await db.from('game_settings').upsert({ user_id: session!.user.id, target_url: nextUrl, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
       if (error) ping('Alamat berubah di browser, tetapi gagal disimpan: ' + error.message);
@@ -136,16 +137,10 @@ export default function App() {
     if (!validUrl(url)) return;
     const normalizedUrl = new URL(url).toString();
     const record = { user_id: session!.user.id, title: new URL(normalizedUrl).hostname, url: normalizedUrl, recorded_at: new Date().toISOString() };
-    if (db) {
-      const { data, error } = await db.from('game_records').insert(record).select('id,title,url,recorded_at').single();
-      if (error) { if (showNotice) ping('Gagal menyimpan data: ' + error.message); return; }
-      setRecords((old) => [data as SavedRecord, ...old]);
-    } else {
-      const local: SavedRecord = { ...record, id: crypto.randomUUID() };
-      const next = [local, ...readLocalRecords()];
-      localStorage.setItem('game.records', JSON.stringify(next));
-      setRecords(next);
-    }
+    if (!db) return;
+    const { data, error } = await db.from('game_records').insert(record).select('id,title,url,recorded_at').single();
+    if (error) { if (showNotice) ping('Gagal menyimpan data: ' + error.message); return; }
+    setRecords((old) => [data as SavedRecord, ...old]);
     if (showNotice) ping('Alamat berhasil disimpan ke Buka Data.');
   }
 
@@ -171,7 +166,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Konfigurasi website terpusat</span></div></div>
           <button className="settings-link" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={17}/> Pengaturan <ChevronDown size={15}/></button>
-          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.0.0</span></div>
+          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.1.3</span></div>
         </div>
       </aside>
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
