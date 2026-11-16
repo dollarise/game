@@ -132,11 +132,13 @@ export default function App() {
     }
   }
 
-  async function saveRecordForUrl(url: string) {
-    const record = { user_id: session!.user.id, title: new URL(url).hostname, url, recorded_at: new Date().toISOString() };
+  async function saveRecordForUrl(url: string, showNotice = true) {
+    if (!validUrl(url)) return;
+    const normalizedUrl = new URL(url).toString();
+    const record = { user_id: session!.user.id, title: new URL(normalizedUrl).hostname, url: normalizedUrl, recorded_at: new Date().toISOString() };
     if (db) {
       const { data, error } = await db.from('game_records').insert(record).select('id,title,url,recorded_at').single();
-      if (error) { ping('Gagal menyimpan data: ' + error.message); return; }
+      if (error) { if (showNotice) ping('Gagal menyimpan data: ' + error.message); return; }
       setRecords((old) => [data as SavedRecord, ...old]);
     } else {
       const local: SavedRecord = { ...record, id: crypto.randomUUID() };
@@ -144,7 +146,7 @@ export default function App() {
       localStorage.setItem('game.records', JSON.stringify(next));
       setRecords(next);
     }
-    ping('Alamat berhasil disimpan ke Buka Data.');
+    if (showNotice) ping('Alamat berhasil disimpan ke Buka Data.');
   }
 
   async function signOut() {
@@ -180,7 +182,7 @@ export default function App() {
         </header>
         <div className="content">
           {section === 'browser' ? (
-            <BrowserFrame url={targetUrl} onNavigate={navigateTarget} onSave={saveRecordForUrl} suspend={settingsOpen}/>
+            <BrowserFrame url={targetUrl} onNavigate={navigateTarget} onSave={saveRecordForUrl} onAutoRecord={(url) => saveRecordForUrl(url, false)} suspend={settingsOpen}/>
           ) : section === 'data' ? (
             <>
               <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Daftar alamat website yang pernah Anda rekam.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Buka Website</button></div>
@@ -320,7 +322,7 @@ async function ensureDesktopBrowser(url: string): Promise<Webview> {
   }
 }
 
-function BrowserFrame({ url, onNavigate, onSave, suspend }: { url: string; onNavigate: (url: string) => void; onSave: (url: string) => void; suspend: boolean }) {
+function BrowserFrame({ url, onNavigate, onSave, onAutoRecord, suspend }: { url: string; onNavigate: (url: string) => void; onSave: (url: string) => void; onAutoRecord: (url: string) => void; suspend: boolean }) {
   const desktop = isTauri();
   const [address, setAddress] = useState(url);
   const [currentUrl, setCurrentUrl] = useState(url);
@@ -332,6 +334,7 @@ function BrowserFrame({ url, onNavigate, onSave, suspend }: { url: string; onNav
   const viewportRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<Webview | null>(null);
   const lastPropUrl = useRef(url);
+  const lastAutoRecordedUrl = useRef('');
 
   useEffect(() => {
     if (url !== lastPropUrl.current) {
@@ -367,8 +370,15 @@ function BrowserFrame({ url, onNavigate, onSave, suspend }: { url: string; onNav
     let unlisten: (() => void) | undefined;
     void listen<string>('browser-url-changed', (event) => {
       if (!validUrl(event.payload)) return;
-      setAddress(event.payload);
-      setCurrentUrl(event.payload);
+      const nextUrl = new URL(event.payload).toString();
+      setAddress(nextUrl);
+      setCurrentUrl(nextUrl);
+      lastPropUrl.current = nextUrl;
+      onNavigate(nextUrl);
+      if (lastAutoRecordedUrl.current !== nextUrl) {
+        lastAutoRecordedUrl.current = nextUrl;
+        onAutoRecord(nextUrl);
+      }
     }).then((stop) => {
       if (active) unlisten = stop;
       else stop();
@@ -377,7 +387,7 @@ function BrowserFrame({ url, onNavigate, onSave, suspend }: { url: string; onNav
       active = false;
       unlisten?.();
     };
-  }, [desktop]);
+  }, [desktop, onNavigate, onAutoRecord]);
 
   useEffect(() => {
     if (!desktop) return;
