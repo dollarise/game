@@ -171,6 +171,17 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   };
   let lastBoardSignature = '';
   let boardCaptureTimer = 0;
+  let boardObserver = null;
+  const startBoardObserver = () => {
+    if (boardObserver || !document.documentElement) return;
+    boardObserver = new MutationObserver(() => scheduleBoardCapture(260));
+    boardObserver.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'src', 'style', 'data-card', 'data-rank', 'data-suit', 'aria-label'] });
+  };
+  const stopBoardObserver = () => {
+    if (boardObserver) boardObserver.disconnect();
+    boardObserver = null;
+    lastBoardSignature = '';
+  };
   const cardCodeOf = (raw) => {
     const text = String(raw || '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
     const long = text.match(/\b(ace|king|queen|jack|10|[2-9]|[AJQK])\s*(?:of\s*)?(spades?|hearts?|diamonds?|clubs?|♠|♥|♦|♣)\b/i);
@@ -281,6 +292,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const label = cardLabel ? 'Klik ' + cardLabel : control ? labelOf(control).slice(0, 120) : 'Klik area permainan';
     if (isStartControl(target)) {
       started = true;
+      startBoardObserver();
       void send('start', { x: event.clientX, y: event.clientY, button: event.button, label })
         .then(() => send('click', { x: event.clientX, y: event.clientY, button: event.button, label }))
         .then(() => scheduleBoardCapture(650));
@@ -293,12 +305,15 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     if (isAutoBuildControl(target)) {
       if (started) void send('click', input).then(() => scheduleBoardCapture(350));
       started = false;
+      scheduleBoardCapture(180);
+      stopBoardObserver();
       void send('auto_build', input);
       return;
     }
     if (isGiveUpControl(target)) {
       if (started) void send('click', input);
       started = false;
+      stopBoardObserver();
       void send('give_up', input);
       return;
     }
