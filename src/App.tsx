@@ -278,7 +278,7 @@ function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Sessio
 let desktopBrowserView: Webview | null = null;
 let desktopBrowserCreation: Promise<Webview> | null = null;
 
-async function ensureDesktopBrowser(url: string): Promise<Webview> {
+async function ensureDesktopBrowser(): Promise<Webview> {
   if (desktopBrowserView) return desktopBrowserView;
   if (desktopBrowserCreation) return desktopBrowserCreation;
 
@@ -389,7 +389,7 @@ function BrowserFrame({ url, onNavigate, onSave, onAutoRecord, suspend }: { url:
     const onLayout = () => { void syncBounds().catch((error) => setNativeError(String(error))); };
 
     const initialize = async () => {
-      const view = await ensureDesktopBrowser(currentUrl);
+      const view = await ensureDesktopBrowser();
       if (disposed) {
         await view.hide();
         return;
