@@ -88,6 +88,7 @@ fn recording_event(
     }
     match event_type.as_str() {
         "start" => app.emit("recording-auto-start", ()).map_err(|error| error.to_string()),
+        "give_up" => app.emit("recording-auto-stop", ()).map_err(|error| error.to_string()),
         "move" | "click" => app.emit("recording-input", RecordingInput {
             kind: event_type.clone(),
             x,
@@ -142,6 +143,13 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg')) + ' ' + labelOf(control.querySelector('img'))).toLowerCase();
     return /\b(play|start|new game|play now)\b/.test(description);
   };
+  const isGiveUpControl = (target) => {
+    if (!(target instanceof Element)) return false;
+    const control = target.closest('button,[role="button"],a,[tabindex]');
+    if (!control) return false;
+    const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg')) + ' ' + labelOf(control.querySelector('img'))).toLowerCase();
+    return /\bgive\s*up\b|\babandon\b/.test(description);
+  };
   document.addEventListener('click', (event) => {
     const target = event.target;
     const control = target instanceof Element ? target.closest('button,[role="button"],a,[tabindex]') : null;
@@ -152,7 +160,15 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
         .then(() => send('click', { x: event.clientX, y: event.clientY, button: event.button, label }));
       return;
     }
-    if (started) void send('click', { x: event.clientX, y: event.clientY, button: event.button, label });
+    if (started) {
+      const input = { x: event.clientX, y: event.clientY, button: event.button, label };
+      void send('click', input).then(() => {
+        if (isGiveUpControl(target)) {
+          started = false;
+          return send('give_up', input);
+        }
+      });
+    }
   }, true);
   document.addEventListener('pointerdown', (event) => {
     if (!started || event.button === 0) return;

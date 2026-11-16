@@ -52,6 +52,7 @@ create table if not exists public.game_mouse_recordings (
   title text not null,
   duration_ms bigint not null default 0 check (duration_ms >= 0),
   event_count integer not null default 0 check (event_count >= 0),
+  status text not null default 'completed' check (status in ('completed', 'incomplete')),
   events jsonb not null default '[]'::jsonb,
   recorded_at timestamptz not null default now(),
   constraint game_mouse_recordings_events_array check (jsonb_typeof(events) = 'array')

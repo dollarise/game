@@ -78,3 +78,13 @@
 .record-event-row small{color:#8ca5c9}
 .record-main span,.record-main small{display:block;font-size:9px;color:#91a1ba;margin-top:4px}
 @media(max-width:700px){.recording-toolbar{align-items:flex-start;flex-direction:column}.recording-actions{width:100%}.recording-actions .button{flex:1}.record-event-row{grid-template-columns:22px 45px 62px 1fr}.record-event-row small{display:none}.record-event-head{flex-direction:column}.record-detail-summary{gap:22px}}
+
+
+/* Recording data categories */
+.data-tabs{display:flex;align-items:center;gap:8px;padding:12px 19px 0;border-bottom:1px solid #223149}
+.data-tab{height:34px;padding:0 12px;margin-bottom:-1px;border:1px solid transparent;border-bottom:2px solid transparent;background:transparent;color:#8796ae;font-size:10px;font-weight:700;display:flex;align-items:center;gap:8px}
+.data-tab:hover{color:#dce7f8;background:#152238}
+.data-tab.active{color:#8db8ff;border-bottom-color:#5594ff}
+.data-tab span{min-width:18px;height:18px;padding:0 5px;border-radius:20px;background:#1c2d47;color:#a9c5f4;display:grid;place-items:center;font-size:9px}
+.record-status-incomplete{display:inline-flex!important;width:max-content;padding:3px 7px;border-radius:5px;background:#3a2c1c;color:#f2c27b!important;font-size:9px!important;margin-top:5px!important}
+@media(max-width:700px){.data-tabs{padding-left:13px}}
