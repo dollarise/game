@@ -94,7 +94,7 @@ fn recording_event(
                 .map_err(|error| error.to_string())?;
             app.emit("recording-auto-complete", ()).map_err(|error| error.to_string())
         },
-        "move" | "click" => app.emit("recording-input", RecordingInput {
+        "move" | "click" | "board" => app.emit("recording-input", RecordingInput {
             kind: event_type.clone(),
             x,
             y,
@@ -159,6 +159,36 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg')) + ' ' + labelOf(control.querySelector('img'))).toLowerCase();
     return /\bauto\s*build\b/.test(description);
   };
+  const captureBoard = () => {
+    if (!started) return;
+    const nodes = Array.from(document.querySelectorAll('[class*="card"],[data-card],[data-testid*="card"],[aria-label*="card" i]'));
+    const cards = [];
+    const seen = new Set();
+    const rankSuit = /\\b(10|[2-9]|[AJQK])\\s*(?:of\\s*)?(♠|♥|♦|♣|spades?|hearts?|diamonds?|clubs?)\\b?/i;
+    const rankOnly = /\\b(ace|king|queen|jack|10|[2-9])\\s+of\\s+(spades?|hearts?|diamonds?|clubs?)\\b/i;
+    for (const node of nodes) {
+      if (!(node instanceof HTMLElement)) continue;
+      const rect = node.getBoundingClientRect();
+      if (rect.width < 12 || rect.height < 18 || rect.bottom < 0 || rect.right < 0 || rect.top > innerHeight || rect.left > innerWidth) continue;
+      const raw = [node.getAttribute('aria-label'), node.getAttribute('title'), node.getAttribute('data-card'), node.getAttribute('data-value'), node.getAttribute('alt'), node.textContent, node.className].filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim();
+      const match = raw.match(rankSuit) || raw.match(rankOnly);
+      const faceUp = !!match;
+      const back = /back|covered|hidden|face-down/i.test(raw);
+      if (!faceUp && !back && !/card/i.test(raw)) continue;
+      const slot = Math.round(rect.left / Math.max(1, innerWidth) * 100) + ':' + Math.round(rect.top / Math.max(1, innerHeight) * 100);
+      const key = slot + ':' + raw.slice(0, 80);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      let code = 'UNKNOWN';
+      if (match) code = match[0].toUpperCase().replace(/\\s+OF\\s+/,'_');
+      else if (back) code = 'BACK';
+      cards.push({ code, faceUp, slot });
+    }
+    if (!cards.length) return;
+    cards.sort((a,b) => a.slot.localeCompare(b.slot) || a.code.localeCompare(b.code));
+    const signature = cards.map(card => card.slot + '=' + card.code).join('|');
+    void send('board', { label: JSON.stringify({ cards, signature }) });
+  };
   const isGiveUpControl = (target) => {
     if (!(target instanceof Element)) return false;
     const control = target.closest('button,[role="button"],a,[tabindex]');
@@ -173,7 +203,8 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     if (isStartControl(target)) {
       started = true;
       void send('start', { x: event.clientX, y: event.clientY, button: event.button, label })
-        .then(() => send('click', { x: event.clientX, y: event.clientY, button: event.button, label }));
+        .then(() => send('click', { x: event.clientX, y: event.clientY, button: event.button, label }))
+        .then(() => window.setTimeout(captureBoard, 650));
       return;
     }
     const input = { x: event.clientX, y: event.clientY, button: event.button, label };
@@ -181,7 +212,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     // recording flag was never set by the frame that detected Play/Start.
     // Detect this explicit button click independently of that local flag.
     if (isAutoBuildControl(target)) {
-      if (started) void send('click', input);
+      if (started) void send('click', input).then(() => window.setTimeout(captureBoard, 350));
       started = false;
       void send('auto_build', input);
       return;
