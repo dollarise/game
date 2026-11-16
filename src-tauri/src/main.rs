@@ -19,20 +19,12 @@ fn browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
 
 #[tauri::command]
 fn browser_back(app: AppHandle) -> Result<(), String> {
-    let view = browser_view(&app)?;
-    if view.can_go_back().map_err(|error| error.to_string())? {
-        view.go_back().map_err(|error| error.to_string())?;
-    }
-    Ok(())
+    browser_view(&app)?.eval("window.history.back();").map_err(|error| error.to_string())
 }
 
 #[tauri::command]
 fn browser_forward(app: AppHandle) -> Result<(), String> {
-    let view = browser_view(&app)?;
-    if view.can_go_forward().map_err(|error| error.to_string())? {
-        view.go_forward().map_err(|error| error.to_string())?;
-    }
-    Ok(())
+    browser_view(&app)?.eval("window.history.forward();").map_err(|error| error.to_string())
 }
 
 #[tauri::command]
