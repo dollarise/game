@@ -89,7 +89,11 @@ fn recording_event(
     match event_type.as_str() {
         "start" => app.emit("recording-auto-start", ()).map_err(|error| error.to_string()),
         "give_up" => app.emit("recording-auto-stop", ()).map_err(|error| error.to_string()),
-        "auto_build" => app.emit("recording-auto-complete", ()).map_err(|error| error.to_string()),
+        "auto_build" => {
+            app.emit("recording-input", RecordingInput { kind: "click".to_string(), x, y, button, label })
+                .map_err(|error| error.to_string())?;
+            app.emit("recording-auto-complete", ()).map_err(|error| error.to_string())
+        },
         "move" | "click" => app.emit("recording-input", RecordingInput {
             kind: event_type.clone(),
             x,
