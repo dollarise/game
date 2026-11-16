@@ -5,10 +5,10 @@ import {
   Activity, ArrowUpRight, BookmarkPlus, Check, ChevronDown, Clock3,
   ExternalLink, Globe2, HardDrive, LoaderCircle, Maximize2, Menu,
   LogOut, MonitorPlay, Plus, RefreshCw, Search, Settings2,
-  ShieldCheck, Trash2, X
+  ShieldCheck, Trash2, X, Users, UserPlus, Shield
 } from 'lucide-react';
 
-type Section = 'record' | 'data';
+type Section = 'record' | 'data' | 'admin';
 type SavedRecord = { id: string; title: string; url: string; recorded_at: string };
 
 const DEFAULT_URL = 'https://1xlite-6487.com/';
@@ -38,6 +38,7 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [notice, setNotice] = useState('');
   const [mobileNav, setMobileNav] = useState(false);
+  const isSuperAdmin = session?.user.app_metadata?.role === 'super_admin';
 
   useEffect(() => {
     if (!db) { setAuthReady(true); setLoading(false); return; }
@@ -147,6 +148,7 @@ export default function App() {
         <nav className="side-nav">
           <button className={section === 'record' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('record'); setMobileNav(false); }}><MonitorPlay size={18}/><span>Rekam</span>{section === 'record' && <span className="nav-dot"/>}</button>
           <button className={section === 'data' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('data'); setMobileNav(false); }}><HardDrive size={18}/><span>Buka Data</span>{records.length > 0 && <small>{records.length}</small>}</button>
+          {isSuperAdmin && <button className={section === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('admin'); setMobileNav(false); }}><Users size={18}/><span>Manajemen Pengguna</span>{section === 'admin' && <span className="nav-dot"/>}</button>}
         </nav>
         <div className="sidebar-bottom">
           <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Konfigurasi website terpusat</span></div></div>
@@ -157,7 +159,7 @@ export default function App() {
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
       <main className="main-area">
         <header className="topbar">
-          <div className="top-left"><button className="icon-button mobile-menu" onClick={() => setMobileNav(true)} aria-label="Buka menu"><Menu size={20}/></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><b>{section === 'record' ? 'Rekam' : 'Buka Data'}</b></div></div>
+          <div className="top-left"><button className="icon-button mobile-menu" onClick={() => setMobileNav(true)} aria-label="Buka menu"><Menu size={20}/></button><div className="breadcrumbs"><span>Workspace</span><span className="crumb-slash">/</span><b>{section === 'record' ? 'Rekam' : section === 'data' ? 'Buka Data' : 'Manajemen Pengguna'}</b></div></div>
           <div className="top-actions"><div className="connection"><span className="status-dot"/>{db ? 'Database aktif' : 'Lokal'}</div><button className="icon-button" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }} aria-label="Pengaturan"><Settings2 size={18}/></button><button className="icon-button" onClick={() => void signOut()} title="Keluar dari aplikasi" aria-label="Keluar"><LogOut size={17}/></button><div className="avatar">{(session.user.email || "U").charAt(0).toUpperCase()}</div></div>
         </header>
         <div className="content">
@@ -168,7 +170,7 @@ export default function App() {
               <BrowserFrame url={targetUrl} onOpen={openTarget}/>
               <div className="under-browser"><span><span className="status-dot"/> Alamat aktif</span><span>Website tertentu mungkin membatasi tampilan di dalam aplikasi.</span></div>
             </>
-          ) : (
+          ) : section === 'data' ? (
             <>
               <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Daftar alamat website yang pernah Anda rekam.</p></div><button className="button button-primary" onClick={() => setSection('record')}><Plus size={16}/> Rekam Baru</button></div>
               <div className="data-summary"><div className="summary-icon"><BookmarkPlus size={19}/></div><div><span>Total data tersimpan</span><b>{records.length} <small>alamat</small></b></div><div className="summary-divider"/><div className="summary-meta"><span>Terakhir diperbarui</span><b>{records[0] ? new Date(records[0].recorded_at).toLocaleString('id-ID') : 'Belum ada data'}</b></div></div>
@@ -177,13 +179,93 @@ export default function App() {
                 <div className="record-list">{filteredRecords.map((item) => <div className="record-row" key={item.id}><div className="record-site-icon"><Globe2 size={18}/></div><div className="record-main"><b>{item.title}</b><a href={item.url} target="_blank" rel="noreferrer">{item.url}</a></div><div className="record-time"><Clock3 size={14}/>{new Date(item.recorded_at).toLocaleString('id-ID')}</div><button className="icon-button" onClick={() => window.open(item.url, '_blank', 'noopener,noreferrer')} title="Buka website"><ArrowUpRight size={17}/></button><button className="icon-button danger-hover" onClick={() => void deleteRecord(item.id)} title="Hapus data"><Trash2 size={16}/></button></div>)}</div>}
               </div>
             </>
-          )}
+          ) : isSuperAdmin ? <AdminPanel db={db} session={session} ping={ping} /> : <div className="empty-state"><Shield size={24}/><b>Akses ditolak</b><span>Menu ini hanya tersedia untuk Super Admin.</span></div>}
         </div>
       </main>
       {settingsOpen && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section className="settings-modal"><div className="modal-head"><div><div className="eyebrow">KONFIGURASI</div><h2>Pengaturan Website</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Tutup"><X size={19}/></button></div><p className="modal-copy">Tentukan alamat website yang akan dibuka pada menu Rekam.</p><label className="field-label" htmlFor="target-url">URL Website Tujuan</label><input id="target-url" className="url-input" value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://contoh.com" onKeyDown={(e) => { if (e.key === 'Enter') void saveSettings(); }}/><div className="field-hint"><ShieldCheck size={14}/> Gunakan alamat lengkap dengan https:// atau http://</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSettingsOpen(false)}>Batal</button><button className="button button-primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} Simpan Pengaturan</button></div></section></div>}
       {notice && <div className="toast"><Check size={16}/>{notice}</div>}
     </div>
   );
+}
+
+
+type ManagedUser = {
+  id: string; email?: string; role: 'user' | 'super_admin';
+  created_at: string; email_confirmed_at?: string | null;
+  banned_until?: string | null; last_sign_in_at?: string | null;
+};
+
+function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Session; ping: (message: string) => void }) {
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'user' | 'super_admin'>('user');
+  const [filter, setFilter] = useState('');
+  const [error, setError] = useState('');
+
+  async function adminAction(payload: Record<string, unknown>) {
+    const { data, error: invokeError } = await db.functions.invoke('game-user-admin', { body: payload });
+    if (invokeError) throw new Error(invokeError.message);
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }
+
+  async function loadUsers() {
+    setBusy(true); setError('');
+    try {
+      const data = await adminAction({ action: 'list' });
+      setUsers((data.users || []) as ManagedUser[]);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Gagal memuat pengguna.'); }
+    finally { setBusy(false); }
+  }
+
+  useEffect(() => { void loadUsers(); }, []);
+
+  async function createUser() {
+    setError('');
+    if (!email.trim() || password.length < 8) { setError('Isi email dan kata sandi minimal 8 karakter.'); return; }
+    setBusy(true);
+    try {
+      await adminAction({ action: 'create', email: email.trim(), password, role });
+      setEmail(''); setPassword(''); setRole('user'); setShowCreate(false);
+      await loadUsers(); ping('Akun pengguna berhasil dibuat dan email otomatis dikonfirmasi.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Gagal membuat akun.'); }
+    finally { setBusy(false); }
+  }
+
+  async function changeRole(user: ManagedUser, nextRole: 'user' | 'super_admin') {
+    if (user.role === nextRole) return;
+    if (!window.confirm(`Ubah peran ${user.email} menjadi ${nextRole === 'super_admin' ? 'Super Admin' : 'Pengguna'}?`)) return;
+    setBusy(true);
+    try { await adminAction({ action: 'set_role', userId: user.id, role: nextRole }); await loadUsers(); ping('Peran pengguna berhasil diperbarui.'); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Gagal mengubah peran.'); }
+    finally { setBusy(false); }
+  }
+
+  async function changeStatus(user: ManagedUser, active: boolean) {
+    if (!window.confirm(`${active ? 'Aktifkan' : 'Nonaktifkan'} akun ${user.email}?`)) return;
+    setBusy(true);
+    try { await adminAction({ action: 'set_active', userId: user.id, active }); await loadUsers(); ping(`Akun berhasil ${active ? 'diaktifkan' : 'dinonaktifkan'}.`); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Gagal mengubah status akun.'); }
+    finally { setBusy(false); }
+  }
+
+  const visibleUsers = users.filter(u => (u.email || '').toLowerCase().includes(filter.toLowerCase()));
+  return <section className="admin-users">
+    <div className="page-heading"><div><div className="eyebrow"><Shield size={14}/> ADMINISTRATOR</div><h1>Manajemen Pengguna</h1><p>Buat akun, atur peran, dan aktifkan atau nonaktifkan akses pengguna.</p></div><button className="button button-primary" onClick={() => { setShowCreate(v => !v); setError(''); }}><UserPlus size={16}/>{showCreate ? 'Tutup Form' : 'Tambah Pengguna'}</button></div>
+    {showCreate && <div className="data-panel admin-create"><div className="panel-heading"><div><h2>Buat Akun Baru</h2><span>Email akan langsung dikonfirmasi. Pengguna tidak perlu mendaftar sendiri.</span></div></div><div className="admin-form-grid"><div><label className="field-label">Email</label><input className="url-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="pengguna@email.com"/></div><div><label className="field-label">Kata sandi sementara</label><input className="url-input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Minimal 8 karakter"/></div><div><label className="field-label">Peran</label><select className="url-input" value={role} onChange={e => setRole(e.target.value as 'user' | 'super_admin')}><option value="user">Pengguna</option><option value="super_admin">Super Admin</option></select></div><div className="admin-form-action"><button className="button button-primary" onClick={() => void createUser()} disabled={busy}><UserPlus size={15}/> Buat Akun</button></div></div></div>}
+    {error && <div className="auth-error admin-error">{error}</div>}
+    <div className="data-panel"><div className="panel-heading"><div><h2>Daftar Akun</h2><span>{users.length} akun terdaftar</span></div><div className="admin-tools"><div className="search-box"><Search size={16}/><input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Cari email..."/></div><button className="icon-button" onClick={() => void loadUsers()} title="Muat ulang" disabled={busy}><RefreshCw size={17}/></button></div></div>
+    {busy && users.length === 0 ? <div className="empty-state"><LoaderCircle className="spin" size={24}/><span>Memuat akun...</span></div> : visibleUsers.length === 0 ? <div className="empty-state"><Users size={24}/><b>Tidak ada akun</b><span>Belum ada pengguna yang cocok dengan pencarian.</span></div> :
+      <div className="admin-user-list">{visibleUsers.map(user => {
+        const active = !user.banned_until || new Date(user.banned_until).getTime() < Date.now();
+        return <div className="admin-user-row" key={user.id}><div className="admin-user-avatar">{(user.email || 'U').charAt(0).toUpperCase()}</div><div className="admin-user-main"><b>{user.email || 'Tanpa email'} {user.id === session.user.id && <small>(Anda)</small>}</b><span>Dibuat {new Date(user.created_at).toLocaleDateString('id-ID')} · {user.email_confirmed_at ? 'Email terverifikasi' : 'Email belum terverifikasi'}</span></div><span className={active ? 'admin-status active' : 'admin-status inactive'}>{active ? 'Aktif' : 'Nonaktif'}</span><select className="admin-role-select" value={user.role} onChange={e => void changeRole(user, e.target.value as 'user' | 'super_admin')} disabled={busy || user.id === session.user.id}><option value="user">Pengguna</option><option value="super_admin">Super Admin</option></select><button className={active ? 'button button-secondary admin-toggle' : 'button button-primary admin-toggle'} onClick={() => void changeStatus(user, !active)} disabled={busy || user.id === session.user.id}>{active ? 'Nonaktifkan' : 'Aktifkan'}</button></div>;
+      })}</div>}
+    </div>
+    <p className="admin-footnote"><ShieldCheck size={14}/> Pengelolaan akun dilindungi pemeriksaan peran di server. Setiap akun tetap hanya dapat mengakses data miliknya sendiri.</p>
+  </section>;
 }
 
 function BrowserFrame({ url, onOpen }: { url: string; onOpen: () => void }) {
