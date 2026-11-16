@@ -220,7 +220,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       const code = cardCodeOf(raw);
       const faceDown = /back|covered|hidden|face[\s_-]*down|card[\s_-]*back/i.test(raw);
       if (!code && !faceDown && !/card/i.test(raw)) continue;
-      candidates.push({ root, rect, raw, code: code || (faceDown ? 'BACK' : 'UNKNOWN'), faceUp: !!code && !faceDown });
+      candidates.push({ root, rect, raw, code: faceDown ? 'BACK' : (code || 'UNKNOWN'), faceUp: !faceDown });
     }
     if (!candidates.length) return;
 
