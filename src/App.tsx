@@ -54,6 +54,7 @@ export default function App() {
   const [recordingStatus, setRecordingStatus] = useState<'waiting' | 'recording' | 'paused'>('waiting');
   const [recordingEvents, setRecordingEvents] = useState<MouseEventData[]>([]);
   const recordingEventsRef = useRef<MouseEventData[]>([]);
+  const recordingSaveStatusRef = useRef<'completed' | 'incomplete'>('completed');
   const autoStopRecordingRef = useRef<() => void>(() => undefined);
   const [elapsedMs, setElapsedMs] = useState(0);
   const recordingStartedAt = useRef<number | null>(null);
@@ -113,6 +114,7 @@ export default function App() {
       accumulatedMs.current = 0;
       recordingStartedAt.current = Date.now();
       recordingEventsRef.current = [];
+      recordingSaveStatusRef.current = 'completed';
       setElapsedMs(0);
       setRecordingEvents([]);
       setRecordingStatus('recording');
@@ -196,7 +198,9 @@ export default function App() {
     setRecordingStatus('recording');
   }
 
-  async function stopRecording(status: 'completed' | 'incomplete' = 'completed') {
+  async function stopRecording(status?: 'completed' | 'incomplete') {
+    if (status) recordingSaveStatusRef.current = status;
+    const saveStatus = recordingSaveStatusRef.current;
     if (!db || !session || recordingStatus === 'waiting' || savingRecord) return;
     if (recordingStartedAt.current !== null) {
       accumulatedMs.current += Date.now() - recordingStartedAt.current;
@@ -218,7 +222,7 @@ export default function App() {
     const recordedAt = new Date().toISOString();
     const title = 'Solitaire - ' + new Date(recordedAt).toLocaleString('id-ID');
     const { data, error } = await db.from('game_mouse_recordings')
-      .insert({ user_id: session.user.id, title, duration_ms: Math.round(duration), event_count: events.length, events, status })
+      .insert({ user_id: session.user.id, title, duration_ms: Math.round(duration), event_count: events.length, events, status: saveStatus })
       .select('id,title,duration_ms,event_count,status,recorded_at').single();
     setSavingRecord(false);
     if (error) {
@@ -235,7 +239,8 @@ export default function App() {
     setElapsedMs(0);
     accumulatedMs.current = 0;
     recordingStartedAt.current = null;
-    ping(status === 'incomplete'
+    recordingSaveStatusRef.current = 'completed';
+    ping(saveStatus === 'incomplete'
       ? 'Give up terdeteksi. Rekaman disimpan ke Buka Data > Belum Selesai.'
       : 'Rekaman berhasil disimpan ke Buka Data.');
   }
