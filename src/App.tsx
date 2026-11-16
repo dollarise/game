@@ -3,7 +3,6 @@ import { createClient } from '@supabase/supabase-js';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import { Webview } from '@tauri-apps/api/webview';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -284,30 +283,14 @@ async function ensureDesktopBrowser(url: string): Promise<Webview> {
   if (desktopBrowserCreation) return desktopBrowserCreation;
 
   desktopBrowserCreation = (async () => {
+    // The native Rust setup creates this WebView with a stable app-data profile.
+    // Never create a second WebView here: doing so could use a temporary profile.
     const existing = await Webview.getByLabel('game-browser');
-    if (existing) {
-      desktopBrowserView = existing;
-      return existing;
+    if (!existing) {
+      throw new Error('Browser internal belum dibuat dengan profil permanen.');
     }
-
-    const view = new Webview(getCurrentWindow(), 'game-browser', {
-      url,
-      x: 0,
-      y: 0,
-      width: 1,
-      height: 1,
-      focus: false,
-      dragDropEnabled: false,
-      dataDirectory: 'browser-profile',
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      void view.once('tauri://created', () => resolve());
-      void view.once('tauri://error', (event) => reject(new Error(String(event.payload))));
-    });
-
-    desktopBrowserView = view;
-    return view;
+    desktopBrowserView = existing;
+    return existing;
   })();
 
   try {
