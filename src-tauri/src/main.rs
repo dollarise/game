@@ -19,6 +19,20 @@ fn browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn browser_start_recording(app: AppHandle) -> Result<(), String> {
+    let view = browser_view(&app)?;
+    let current = view.url().map_err(|error| error.to_string())?;
+    let is_solitaire_page = current.scheme() == "https"
+        && current.host_str() == Some("1xlite-6487.com")
+        && current.path().starts_with("/en/games/solitaire");
+    if !is_solitaire_page {
+        return Err("Perekaman hanya diizinkan pada halaman Solitaire yang ditentukan.".to_string());
+    }
+    view.eval("window.postMessage({ type: 'GAME_MANUAL_START_RECORDING' }, '*');")
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn browser_back(app: AppHandle) -> Result<(), String> {
     browser_view(&app)?.eval("window.history.back();").map_err(|error| error.to_string())
 }
@@ -286,6 +300,18 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     if (boardCaptureTimer) window.clearTimeout(boardCaptureTimer);
     boardCaptureTimer = window.setTimeout(() => { boardCaptureTimer = 0; captureBoard(); }, delay);
   };
+  // Manual fallback from the GAME toolbar, relayed into nested game frames.
+  window.addEventListener('message', (event) => {
+    if (!event.data || event.data.type !== 'GAME_MANUAL_START_RECORDING') return;
+    if (!started) {
+      started = true;
+      startBoardObserver();
+      void send('start', { label: 'Rekam manual' }).then(() => scheduleBoardCapture(350));
+    }
+    for (const frame of Array.from(document.querySelectorAll('iframe'))) {
+      try { frame.contentWindow?.postMessage({ type: 'GAME_MANUAL_START_RECORDING' }, '*'); } catch (_) {}
+    }
+  });
   const isGiveUpControl = (target) => {
     if (!(target instanceof Element)) return false;
     const control = target.closest('button,[role="button"],a,[tabindex]');
@@ -419,6 +445,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             browser_navigate,
+            browser_start_recording,
             browser_back,
             browser_forward,
             browser_reload,
