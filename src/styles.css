@@ -52,7 +52,7 @@
 
 .native-browser-placeholder{position:absolute;inset:0;display:grid;place-items:center;background:#f8fafc;color:#64748b;font-size:12px;padding:20px;text-align:center}
 
-.recording-toolbar{margin-top:13px;padding:13px 15px;background:#101a2a;border:1px solid #263750;border-radius:11px;display:flex;align-items:center;justify-content:space-between;gap:15px}
+.recording-toolbar{margin-top:0;margin-bottom:13px;padding:13px 15px;background:#101a2a;border:1px solid #263750;border-radius:11px;display:flex;align-items:center;justify-content:space-between;gap:15px}
 .recording-indicator{display:flex;align-items:center;gap:11px;min-width:0}
 .recording-indicator b,.recording-indicator span{display:block}
 .recording-indicator b{font-size:11px;color:#e1eafa}
