@@ -28,6 +28,9 @@ fn browser_start_recording(app: AppHandle) -> Result<(), String> {
     if !is_solitaire_page {
         return Err("Perekaman hanya diizinkan pada halaman Solitaire yang ditentukan.".to_string());
     }
+    // Start the React recording session directly; do not depend on the
+    // page's injected Tauri bridge to deliver the initial state transition.
+    app.emit("recording-auto-start", ()).map_err(|error| error.to_string())?;
     view.eval("window.postMessage({ type: 'GAME_MANUAL_START_RECORDING' }, '*');")
         .map_err(|error| error.to_string())
 }
@@ -129,9 +132,16 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   })();
   if ((!isGamePage && !topPath.startsWith('/en/games/solitaire') && !isGameEmbed) ||
       window.__GAME_MOUSE_RECORDING_INSTALLED__) return;
+  // Install listeners even if the Tauri bridge is injected slightly later.
+  // Manual start is delivered by postMessage; event transport is checked per call.
   window.__GAME_MOUSE_RECORDING_INSTALLED__ = true;
-  if (!window.__TAURI_INTERNALS__ || typeof window.__TAURI_INTERNALS__.invoke !== 'function') return;
-  const invoke = (...args) => window.__TAURI_INTERNALS__.invoke(...args);
+  const invoke = (...args) => {
+    const bridge = window.__TAURI_INTERNALS__;
+    if (!bridge || typeof bridge.invoke !== 'function') {
+      return Promise.reject(new Error('Bridge Tauri belum tersedia.'));
+    }
+    return bridge.invoke(...args);
+  };
   let started = false;
   let lastMoveAt = 0;
   let lastX = -10000;
@@ -306,7 +316,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     if (!started) {
       started = true;
       startBoardObserver();
-      void send('start', { label: 'Rekam manual' }).then(() => scheduleBoardCapture(350));
+      scheduleBoardCapture(350);
     }
     for (const frame of Array.from(document.querySelectorAll('iframe'))) {
       try { frame.contentWindow?.postMessage({ type: 'GAME_MANUAL_START_RECORDING' }, '*'); } catch (_) {}
