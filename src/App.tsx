@@ -251,6 +251,12 @@ export default function App() {
     }
   }
 
+  async function startManualRecording() {
+    if (recordingStatus !== 'waiting' || recordingSessionActive.current) return;
+    try { await invoke('browser_start_recording'); }
+    catch (error) { ping('Tidak dapat memulai rekaman manual: ' + String(error)); }
+  }
+
   function pauseRecording() {
     if (recordingStatus !== 'recording' || recordingStartedAt.current === null) return;
     accumulatedMs.current += Date.now() - recordingStartedAt.current;
@@ -354,7 +360,7 @@ export default function App() {
           {section === 'browser' ? (
             <BrowserFrame url={targetUrl} onNavigate={navigateTarget} suspend={settingsOpen}
               recordingStatus={recordingStatus} elapsedMs={elapsedMs} eventCount={recordingEvents.length}
-              savingRecord={savingRecord} onPause={pauseRecording} onResume={resumeRecording} onStop={() => void stopRecording()} />
+              savingRecord={savingRecord} onStart={() => void startManualRecording()} onPause={pauseRecording} onResume={resumeRecording} onStop={() => void stopRecording()} />
           ) : section === 'data' ? (
             <>
               <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Riwayat kondisi papan, langkah permainan, dan aktivitas mouse Solitaire.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Kembali ke Rekam</button></div>
@@ -454,9 +460,9 @@ function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Sessio
   </section>;
 }
 
-function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, eventCount, savingRecord, onPause, onResume, onStop }: {
+function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, eventCount, savingRecord, onStart, onPause, onResume, onStop }: {
   url: string; onNavigate: (url: string) => void; suspend: boolean;
-  recordingStatus: 'waiting' | 'recording' | 'paused'; elapsedMs: number; eventCount: number; savingRecord: boolean;
+  recordingStatus: 'waiting' | 'recording' | 'paused'; elapsedMs: number; eventCount: number; savingRecord: boolean; onStart: () => void;
   onPause: () => void; onResume: () => void; onStop: () => void;
 }) {
   const desktop = isTauri();
@@ -547,6 +553,7 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
       <div className="recording-toolbar">
         <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Menunggu Play / Start Game' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Klik tombol Play di dalam Solitaire untuk mulai otomatis' : eventCount.toLocaleString('id-ID') + ' aktivitas mouse terekam'}</span></div></div>
         <div className="recording-actions">
+          {recordingStatus === 'waiting' && <button className="button button-primary" onClick={onStart}><Play size={15}/> Rekam</button>}
           {recordingStatus === 'recording' && <button className="button button-secondary" onClick={onPause}><Pause size={15}/> Jeda</button>}
           {recordingStatus === 'paused' && <button className="button button-primary" onClick={onResume}><Play size={15}/> Lanjutkan</button>}
           {recordingStatus !== 'waiting' && <button className="button button-danger" onClick={onStop} disabled={savingRecord}>{savingRecord ? <LoaderCircle className="spin" size={15}/> : <Square size={14}/>} {savingRecord ? 'Menyimpan...' : 'Stop'}</button>}
