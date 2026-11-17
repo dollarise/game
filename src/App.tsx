@@ -544,6 +544,15 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
   }
   return (
     <section className="browser-workspace">
+      <div className="recording-toolbar">
+        <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Menunggu Play / Start Game' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Klik tombol Play di dalam Solitaire untuk mulai otomatis' : eventCount.toLocaleString('id-ID') + ' aktivitas mouse terekam'}</span></div></div>
+        <div className="recording-actions">
+          {recordingStatus === 'recording' && <button className="button button-secondary" onClick={onPause}><Pause size={15}/> Jeda</button>}
+          {recordingStatus === 'paused' && <button className="button button-primary" onClick={onResume}><Play size={15}/> Lanjutkan</button>}
+          {recordingStatus !== 'waiting' && <button className="button button-danger" onClick={onStop} disabled={savingRecord}>{savingRecord ? <LoaderCircle className="spin" size={15}/> : <Square size={14}/>} {savingRecord ? 'Menyimpan...' : 'Stop'}</button>}
+        </div>
+      </div>
+ 
       <div className="browser-shell">
         <div className="browser-chrome">
           <div className="browser-controls">
@@ -559,14 +568,6 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
         <div className="browser-viewport" ref={viewportRef}>
           {desktop ? <div className="native-browser-placeholder">{nativeError ? <span>Browser desktop gagal dijalankan: {nativeError}</span> : !nativeReady ? <span>Menyiapkan browser internal...</span> : null}</div> :
             <iframe key={reloadKey} title="Browser GAME" src={currentUrl} allow="clipboard-read; clipboard-write; fullscreen; autoplay" referrerPolicy="strict-origin-when-cross-origin"/>}
-        </div>
-      </div>
-      <div className="recording-toolbar">
-        <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Menunggu Play / Start Game' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Klik tombol Play di dalam Solitaire untuk mulai otomatis' : eventCount.toLocaleString('id-ID') + ' aktivitas mouse terekam'}</span></div></div>
-        <div className="recording-actions">
-          {recordingStatus === 'recording' && <button className="button button-secondary" onClick={onPause}><Pause size={15}/> Jeda</button>}
-          {recordingStatus === 'paused' && <button className="button button-primary" onClick={onResume}><Play size={15}/> Lanjutkan</button>}
-          {recordingStatus !== 'waiting' && <button className="button button-danger" onClick={onStop} disabled={savingRecord}>{savingRecord ? <LoaderCircle className="spin" size={15}/> : <Square size={14}/>} {savingRecord ? 'Menyimpan...' : 'Stop'}</button>}
         </div>
       </div>
     </section>
