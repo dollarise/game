@@ -157,10 +157,18 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   };
   const isStartControl = (target) => {
     if (!(target instanceof Element)) return false;
-    const control = target.closest('button,[role="button"],a,[tabindex],[class*="play"],[class*="start"]');
-    if (!control) return false;
-    const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg')) + ' ' + labelOf(control.querySelector('img'))).toLowerCase();
-    return /\b(play|start|new game|play now)\b/.test(description);
+    // The game uses nested div/SVG controls in some layouts. Inspect the
+    // clicked element and several ancestors instead of relying on button tags.
+    let node = target;
+    for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
+      const description = [
+        labelOf(node),
+        labelOf(node.querySelector && node.querySelector('svg')),
+        labelOf(node.querySelector && node.querySelector('img'))
+      ].join(' ').toLowerCase();
+      if (/(^|[^a-z])(play|start|new\\s*game|play\\s*now|deal)([^a-z]|$)/i.test(description)) return true;
+    }
+    return false;
   };
   const isAutoBuildControl = (target) => {
     if (!(target instanceof Element)) return false;
@@ -285,17 +293,34 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg')) + ' ' + labelOf(control.querySelector('img'))).toLowerCase();
     return /\bgive\s*up\b|\babandon\b/.test(description);
   };
+  // Detect the launch action on pointer press as well as click. This starts
+  // the session even when the embedded game's UI suppresses its click event.
+  document.addEventListener('pointerdown', (event) => {
+    if (started || !isStartControl(event.target)) return;
+    started = true;
+    startBoardObserver();
+    const control = event.target instanceof Element
+      ? event.target.closest('button,[role="button"],a,[tabindex]') || event.target
+      : null;
+    const label = control ? labelOf(control).slice(0, 120) : 'Play / Start Game';
+    void send('start', { x: event.clientX, y: event.clientY, button: event.button, label });
+  }, true);
   document.addEventListener('click', (event) => {
     const target = event.target;
     const control = target instanceof Element ? target.closest('button,[role="button"],a,[tabindex]') : null;
     const cardLabel = cardLabelOf(target);
     const label = cardLabel ? 'Klik ' + cardLabel : control ? labelOf(control).slice(0, 120) : 'Klik area permainan';
     if (isStartControl(target)) {
-      started = true;
-      startBoardObserver();
-      void send('start', { x: event.clientX, y: event.clientY, button: event.button, label })
-        .then(() => send('click', { x: event.clientX, y: event.clientY, button: event.button, label }))
-        .then(() => scheduleBoardCapture(650));
+      if (!started) {
+        started = true;
+        startBoardObserver();
+        void send('start', { x: event.clientX, y: event.clientY, button: event.button, label })
+          .then(() => send('click', { x: event.clientX, y: event.clientY, button: event.button, label }))
+          .then(() => scheduleBoardCapture(650));
+      } else {
+        void send('click', { x: event.clientX, y: event.clientY, button: event.button, label })
+          .then(() => scheduleBoardCapture(650));
+      }
       return;
     }
     const input = { x: event.clientX, y: event.clientY, button: event.button, label };
