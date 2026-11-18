@@ -1,6 +1,6 @@
 export type BoardCard = {
   code: string;
-  faceUp: boolean;
+  faceUp: boolean | null;
   slot: string;
 };
 
@@ -33,7 +33,7 @@ export function decodeBoardSnapshot(label?: string): BoardSnapshot | null {
       !!card && typeof card === 'object' &&
       typeof (card as BoardCard).code === 'string' &&
       typeof (card as BoardCard).slot === 'string' &&
-      typeof (card as BoardCard).faceUp === 'boolean'
+      (typeof (card as BoardCard).faceUp === 'boolean' || (card as BoardCard).faceUp === null)
     );
     return cards.length ? { cards, signature: value.signature } : null;
   } catch {
@@ -96,7 +96,7 @@ export function inferGameStep(
 
   const newlyRevealed = next.cards.filter((card) => {
     if (!card.faceUp || UNKNOWN_CODES.has(card.code.trim().toUpperCase())) return false;
-    return previous.cards.some((old) => old.slot === card.slot && !old.faceUp);
+    return previous.cards.some((old) => old.slot === card.slot && old.faceUp === false);
   });
   if (newlyRevealed.length === 1) {
     const card = newlyRevealed[0];
