@@ -8,8 +8,8 @@ const ALLOWED_GAME_HOSTS = new Set(['1xlite-6487.com', '1xlite-7498.com']);
 let mainWindow;
 let gameView;
 let recordingActive = false;
-let cdpAttached = false;
 let captureInstalled = false;
+let captureMessageListenerAttached = false;
 let scriptIdentifier = null;
 
 const CAPTURE_SCRIPT = String.raw`(() => {
@@ -131,34 +131,36 @@ function attachCapture() {
   const wc = gameView.webContents;
   if (captureInstalled && wc.debugger.isAttached()) return Promise.resolve();
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
-  cdpAttached = true;
-  wc.debugger.on('message', (_event, method, params) => {
-    if (method !== 'Runtime.bindingCalled' || params.name !== '__GAME_CAPTURE' || !isAllowedRecordingPage(gameView?.webContents.getURL() || '')) return;
-    let payload;
-    try { payload = JSON.parse(params.payload); } catch { return; }
-    if (!payload || typeof payload.type !== 'string') return;
-    if (payload.type === 'auto-start') {
-      if (!recordingActive) {
-        recordingActive = true;
-        sendToApp('recording-auto-start', { reason: payload.reason || 'play-start' });
+  if (!captureMessageListenerAttached) {
+    wc.debugger.on('message', (_event, method, params) => {
+      if (method !== 'Runtime.bindingCalled' || params.name !== '__GAME_CAPTURE' || !isAllowedRecordingPage(gameView?.webContents.getURL() || '')) return;
+      let payload;
+      try { payload = JSON.parse(params.payload); } catch { return; }
+      if (!payload || typeof payload.type !== 'string') return;
+      if (payload.type === 'auto-start') {
+        if (!recordingActive) {
+          recordingActive = true;
+          sendToApp('recording-auto-start', { reason: payload.reason || 'play-start' });
+        }
+        return;
       }
-      return;
-    }
-    if (!recordingActive) return;
-    if (payload.type === 'auto-stop') {
-      recordingActive = false;
-      sendToApp('recording-auto-stop', { status: 'incomplete', reason: payload.reason || 'game-action' });
-      return;
-    }
-    if (!['click', 'move', 'board'].includes(payload.type)) return;
-    sendToApp('recording-input', {
-      type: payload.type,
-      x: Number.isFinite(payload.x) ? payload.x : 0,
-      y: Number.isFinite(payload.y) ? payload.y : 0,
-      button: Number.isInteger(payload.button) ? payload.button : undefined,
-      label: typeof payload.label === 'string' ? payload.label : undefined
+      if (!recordingActive) return;
+      if (payload.type === 'auto-stop') {
+        recordingActive = false;
+        sendToApp('recording-auto-stop', { status: 'incomplete', reason: payload.reason || 'game-action' });
+        return;
+      }
+      if (!['click', 'move', 'board'].includes(payload.type)) return;
+      sendToApp('recording-input', {
+        type: payload.type,
+        x: Number.isFinite(payload.x) ? payload.x : 0,
+        y: Number.isFinite(payload.y) ? payload.y : 0,
+        button: Number.isInteger(payload.button) ? payload.button : undefined,
+        label: typeof payload.label === 'string' ? payload.label : undefined
+      });
     });
-  });
+    captureMessageListenerAttached = true;
+  }
   return wc.debugger.sendCommand('Runtime.enable')
     .then(() => wc.debugger.sendCommand('Runtime.addBinding', { name: '__GAME_CAPTURE' }))
     .then(() => wc.debugger.sendCommand('Page.enable'))
@@ -230,8 +232,9 @@ function createWindow() {
     return { action: 'deny' };
   });
   void attachCapture()
-    .then(() => gameView && gameView.webContents.loadURL(DEFAULT_GAME_URL))
-    .catch((error) => console.error('[GAME] Failed to initialize Chromium capture:', error));
+    .catch((error) => console.error('[GAME] Chromium capture will retry on demand:', error))
+    .then(() => gameView && !gameView.webContents.isDestroyed() ? gameView.webContents.loadURL(DEFAULT_GAME_URL) : undefined)
+    .catch((error) => console.error('[GAME] Failed to load the default game page:', error));
 
   if (process.env.VITE_DEV_SERVER_URL) void mainWindow.loadURL(APP_URL);
   else void mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
