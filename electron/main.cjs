@@ -354,7 +354,8 @@ app.whenReady().then(() => {
   if (!process.env.VITE_DEV_SERVER_URL) {
     protocol.handle('game', (request) => {
       const url = new URL(request.url);
-      const relativePath = decodeURIComponent(url.pathname).replace(/^\\/+/, '') || 'index.html';
+      const relativePath = decodeURIComponent(url.pathname).replace(/^\/+/, '') || 'index.html';
+      if (url.hostname !== 'app') return new Response('Not found', { status: 404 });
       const root = path.resolve(app.getAppPath(), 'dist');
       const filePath = path.resolve(root, relativePath);
       if (filePath !== root && !filePath.startsWith(root + path.sep)) {
