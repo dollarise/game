@@ -1,12 +1,12 @@
 
 (() => {
-  // This script is injected only into GAME's dedicated game-browser WebView.
+  // This script is injected into every frame in GAME's dedicated Electron Chromium browser.
   // Install in every frame: cross-origin game frames may hide their referrer,
   // so URL/referrer gating here can silently prevent the actual game frame
-  // from receiving mouse listeners. Native recording_event still validates
+  // from receiving mouse listeners. The Electron main process still validates
   // the top-level Solitaire URL before accepting any event.
   if (window.__GAME_MOUSE_RECORDING_INSTALLED__) return;
-  // Install listeners even if the Tauri bridge is injected slightly later.
+  // Install listeners before the Electron start signal arrives.
   // Manual start is delivered by postMessage; event transport is checked per call.
   window.__GAME_MOUSE_RECORDING_INSTALLED__ = true;
   const invoke = (command, payload = {}) => {
@@ -42,9 +42,9 @@
       pageUrl: location.href,
       label: data.label || null
     };
-    // Tauri's invoke bridge is not guaranteed to exist in cross-origin game
+    // The Electron IPC bridge is not available inside cross-origin game
     // iframes. Relay their captured input to the top-level GAME webview, where
-    // the native bridge is available, instead of silently dropping the event.
+    // the top-level Electron preload is available, instead of silently dropping the event.
     if (!isTopFrame) {
       window.top.postMessage({ type: 'GAME_MOUSE_RECORDING_EVENT', payload }, '*');
       return Promise.resolve();
