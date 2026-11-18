@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { invoke, isTauri } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { desktopInvoke, desktopListen, isDesktop } from './lib/desktop';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { decodeBoardSnapshot, inferGameStep, patternCertainty, type BoardCard } from './lib/solitaire-engine';
 import {
@@ -135,7 +134,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
     let unlistenDiagnostic: (() => void) | undefined;
-    void listen<{ stage: string }>('recording-diagnostic', (event) => {
+    void desktopListen<{ stage: string }>('recording-diagnostic', (event) => {
       if (active) setRecordingDiagnostics((items) => [...items, event.payload.stage].slice(-8));
     }).then((stop) => { if (active) unlistenDiagnostic = stop; else stop(); });
     return () => { active = false; unlistenDiagnostic?.(); };
@@ -144,7 +143,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
     let unlistenInput: (() => void) | undefined;
-    void listen<Omit<MouseEventData, 'elapsed_ms'> & { type: 'move' | 'click' | 'board' }>('recording-input', async (event) => {
+    void desktopListen<Omit<MouseEventData, 'elapsed_ms'> & { type: 'move' | 'click' | 'board' }>('recording-input', async (event) => {
       if (!active || recordingStartedAt.current === null) return;
       const elapsed = accumulatedMs.current + Date.now() - recordingStartedAt.current;
       const payload = event.payload;
@@ -271,7 +270,7 @@ export default function App() {
     // depend on the WebView2 command/event round-trip, which can be delayed.
     beginRecordingSession('Timer rekaman berjalan. Silakan mainkan Solitaire.');
     try {
-      const result = await invoke<RecordingStartResult>('browser_start_recording');
+      const result = await desktopInvoke<RecordingStartResult>('browser_start_recording');
       setRecordingDiagnostics(result.stages);
       if (result.browser_error) ping('Perintah Rekam diterima aplikasi, tetapi gagal diteruskan ke browser: ' + result.browser_error);
     } catch (error) {
@@ -423,7 +422,7 @@ function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Sessio
   const [error, setError] = useState('');
 
   async function adminAction(payload: Record<string, unknown>) {
-    const { data, error: invokeError } = await db.functions.invoke('game-user-admin', { body: payload });
+    const { data, error: invokeError } = await db.functions.desktopInvoke('game-user-admin', { body: payload });
     if (invokeError) throw new Error(invokeError.message);
     if (data?.error) throw new Error(data.error);
     return data;
@@ -489,7 +488,7 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, diagnostics }
   url: string; onNavigate: (url: string) => void; suspend: boolean;
   recordingStatus: 'waiting' | 'recording' | 'paused'; diagnostics: string[];
 }) {
-  const desktop = isTauri();
+  const desktop = isDesktop();
   const [address, setAddress] = useState(url);
   const [currentUrl, setCurrentUrl] = useState(url);
   const [reloadKey, setReloadKey] = useState(0);
@@ -503,16 +502,16 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, diagnostics }
   useEffect(() => {
     if (url !== lastPropUrl.current) {
       lastPropUrl.current = url; setAddress(url); setCurrentUrl(url); setHistory([url]); setHistoryIndex(0);
-      if (desktop) void invoke('browser_navigate', { url }).catch((error) => setNativeError(String(error)));
+      if (desktop) void desktopInvoke('browser_navigate', { url }).catch((error) => setNativeError(String(error)));
     }
   }, [url, desktop]);
 
   useEffect(() => {
     if (!desktop) return;
-    if (suspend) void invoke('browser_set_visible', { visible: false }).catch((error) => setNativeError(String(error)));
+    if (suspend) void desktopInvoke('browser_set_visible', { visible: false }).catch((error) => setNativeError(String(error)));
     else {
       const rect = viewportRef.current?.getBoundingClientRect();
-      if (rect && rect.width > 1 && rect.height > 1) void invoke('browser_set_bounds', { x: Math.max(0, rect.left), y: Math.max(0, rect.top), width: rect.width, height: rect.height }).catch((error) => setNativeError(String(error)));
+      if (rect && rect.width > 1 && rect.height > 1) void desktopInvoke('browser_set_bounds', { x: Math.max(0, rect.left), y: Math.max(0, rect.top), width: rect.width, height: rect.height }).catch((error) => setNativeError(String(error)));
     }
   }, [desktop, suspend]);
 
@@ -520,7 +519,7 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, diagnostics }
     if (!desktop) return;
     let active = true;
     let unlisten: (() => void) | undefined;
-    void listen<string>('browser-url-changed', (event) => {
+    void desktopListen<string>('browser-url-changed', (event) => {
       if (!active || !validUrl(event.payload)) return;
       const nextUrl = new URL(event.payload).toString();
       setAddress(nextUrl);
@@ -539,15 +538,15 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, diagnostics }
       const element = viewportRef.current;
       if (!element || disposed) return;
       const rect = element.getBoundingClientRect();
-      if (rect.width < 2 || rect.height < 2) { await invoke('browser_set_visible', { visible: false }); return; }
-      await invoke('browser_set_bounds', { x: Math.max(0, rect.left), y: Math.max(0, rect.top), width: rect.width, height: rect.height });
+      if (rect.width < 2 || rect.height < 2) { await desktopInvoke('browser_set_visible', { visible: false }); return; }
+      await desktopInvoke('browser_set_bounds', { x: Math.max(0, rect.left), y: Math.max(0, rect.top), width: rect.width, height: rect.height });
       if (!disposed) setNativeReady(true);
     };
     const onLayout = () => { void syncBounds().catch((error) => setNativeError(String(error))); };
     void syncBounds().catch((error) => setNativeError(String(error)));
     window.addEventListener('resize', onLayout); window.addEventListener('scroll', onLayout, true);
     if (viewportRef.current && typeof ResizeObserver !== 'undefined') { observer = new ResizeObserver(onLayout); observer.observe(viewportRef.current); }
-    return () => { disposed = true; observer?.disconnect(); window.removeEventListener('resize', onLayout); window.removeEventListener('scroll', onLayout, true); void invoke('browser_set_visible', { visible: false }).catch(() => undefined); };
+    return () => { disposed = true; observer?.disconnect(); window.removeEventListener('resize', onLayout); window.removeEventListener('scroll', onLayout, true); void desktopInvoke('browser_set_visible', { visible: false }).catch(() => undefined); };
   }, [desktop]);
 
   async function navigate(value: string, addHistory = true) {
@@ -556,20 +555,20 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, diagnostics }
     if (!validUrl(next)) return;
     next = new URL(next).toString(); lastPropUrl.current = next; setCurrentUrl(next); setAddress(next);
     if (addHistory) { const nextHistory = [...history.slice(0, historyIndex + 1), next]; setHistory(nextHistory); setHistoryIndex(nextHistory.length - 1); }
-    if (desktop) { try { await invoke('browser_navigate', { url: next }); } catch (error) { setNativeError(String(error)); } }
+    if (desktop) { try { await desktopInvoke('browser_navigate', { url: next }); } catch (error) { setNativeError(String(error)); } }
     else setReloadKey((value) => value + 1);
     onNavigate(next);
   }
   function goBack() {
-    if (desktop) { void invoke('browser_back').catch((error) => setNativeError(String(error))); return; }
+    if (desktop) { void desktopInvoke('browser_back').catch((error) => setNativeError(String(error))); return; }
     if (historyIndex <= 0) return; const nextIndex = historyIndex - 1; setHistoryIndex(nextIndex); void navigate(history[nextIndex], false);
   }
   function goForward() {
-    if (desktop) { void invoke('browser_forward').catch((error) => setNativeError(String(error))); return; }
+    if (desktop) { void desktopInvoke('browser_forward').catch((error) => setNativeError(String(error))); return; }
     if (historyIndex >= history.length - 1) return; const nextIndex = historyIndex + 1; setHistoryIndex(nextIndex); void navigate(history[nextIndex], false);
   }
   function reload() {
-    if (desktop) void invoke('browser_reload').catch((error) => setNativeError(String(error)));
+    if (desktop) void desktopInvoke('browser_reload').catch((error) => setNativeError(String(error)));
     else setReloadKey((value) => value + 1);
   }
   return (
