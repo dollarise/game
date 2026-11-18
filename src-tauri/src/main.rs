@@ -272,8 +272,15 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const visited = new Set();
     let found = null;
     const inspect = (value) => {
-      if (!value || typeof value !== 'object') return;
-      const candidates = [value.table, value.game && value.game.table, value.$ && value.$.table, value.$ && value.$.game && value.$.game.table];
+      if (!value || typeof value !== 'object' || found) return;
+      const candidates = [value.table, value.game && value.game.table, value.$ && value.$.table, value.$ && value.$.game && value.$.game.table, value.$refs && value.$refs.game && value.$refs.game.table];
+      try {
+        for (const key of Object.keys(value)) {
+          const nested = value[key];
+          if (!nested || typeof nested !== 'object') continue;
+          candidates.push(nested, nested.table, nested.game && nested.game.table);
+        }
+      } catch (_) {}
       for (const candidate of candidates) {
         if (candidate && candidate.columnContainers) { found = candidate; return; }
       }
@@ -358,7 +365,8 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const table = result.table;
     if (!table) return null;
     reportDiagnostic('game-table-found');
-    const columns = Array.isArray(table.columnContainers) ? table.columnContainers : Object.values(table.columnContainers || {});
+    const valuesOf = (collection) => Array.isArray(collection) ? collection : (collection instanceof Map ? Array.from(collection.values()) : Object.values(collection || {}));
+    const columns = valuesOf(table.columnContainers);
     if (!columns.length) return null;
     reportDiagnostic('game-columns-found');
     const cards = [];
@@ -380,7 +388,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       });
     };
     columns.slice(0, 7).forEach((column, index) => appendContainer(column, 'tableau:' + (index + 1)));
-    const houses = Array.isArray(table.houseContainers) ? table.houseContainers : Object.values(table.houseContainers || {});
+    const houses = valuesOf(table.houseContainers);
     houses.forEach((container, index) => appendContainer(container, 'foundation:' + (index + 1)));
     appendContainer(table.deckContainer, 'deck');
     appendContainer(table.baseContainer, 'base');
