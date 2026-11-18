@@ -360,7 +360,15 @@ export default function App() {
           <button className={section === 'browser' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('browser'); setMobileNav(false); }}><MonitorPlay size={18}/><span>Browser</span>{section === 'browser' && <span className="nav-dot"/>}</button>
           <button className={section === 'data' ? 'nav-item active' : 'nav-item'} onClick={() => { if (recordingStatus !== 'waiting') { ping('Tekan Stop untuk menyimpan rekaman sebelum membuka Buka Data.'); return; } setSection('data'); setMobileNav(false); }}><HardDrive size={18}/><span>Buka Data</span>{records.length > 0 && <small>{records.length}</small>}</button>
           {isSuperAdmin && <button className={section === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('admin'); setMobileNav(false); }}><Users size={18}/><span>Manajemen Pengguna</span>{section === 'admin' && <span className="nav-dot"/>}</button>}
-          <button className="nav-item" onClick={() => { setSection('browser'); setMobileNav(false); if (recordingStatus === 'waiting') void startManualRecording(); else if (recordingStatus === 'paused') resumeRecording(); }} disabled={startingRecording || recordingStatus === 'recording'}><Play size={18}/><span>{recordingStatus === 'recording' ? formatDuration(elapsedMs) : recordingStatus === 'paused' ? 'Lanjutkan' : 'Rekam'}</span></button>
+          <div className="recording-toolbar sidebar-recording-toolbar">
+            <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Siap Merekam' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Tekan Rekam di aplikasi untuk memulai sesi' : eventCountLabel(recordingEvents.length) + ' aktivitas mouse terekam'}</span></div></div>
+            <div className="recording-actions">
+              {recordingStatus === 'waiting' && <button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); void startManualRecording(); }} disabled={startingRecording}><Play size={15}/> {startingRecording ? 'Memulai...' : 'Rekam'}</button>}
+              {recordingStatus === 'recording' && <button className="button button-secondary" onClick={pauseRecording}><Pause size={15}/> Jeda</button>}
+              {recordingStatus === 'paused' && <button className="button button-primary" onClick={resumeRecording}><Play size={15}/> Lanjutkan</button>}
+              {recordingStatus !== 'waiting' && <button className="button button-danger" onClick={() => void stopRecording()} disabled={savingRecord}>{savingRecord ? <LoaderCircle className="spin" size={15}/> : <Square size={14}/>} {savingRecord ? 'Menyimpan...' : 'Stop'}</button>}
+            </div>
+          </div>
         </nav>
         <div className="sidebar-bottom">
           <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Rekam langkah dan kondisi Solitaire</span></div></div>
@@ -568,15 +576,6 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
   }
   return (
     <section className="browser-workspace">
-      <div className="recording-toolbar">
-        <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Siap Merekam' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Tekan Rekam di aplikasi untuk memulai sesi' : eventCount.toLocaleString('id-ID') + ' aktivitas mouse terekam'}</span></div></div>
-        <div className="recording-actions">
-          {recordingStatus === 'waiting' && <button className="button button-primary" onClick={onStart} disabled={startingRecording}><Play size={15}/> {startingRecording ? 'Memulai...' : 'Rekam'}</button>}
-          {recordingStatus === 'recording' && <button className="button button-secondary" onClick={onPause}><Pause size={15}/> Jeda</button>}
-          {recordingStatus === 'paused' && <button className="button button-primary" onClick={onResume}><Play size={15}/> Lanjutkan</button>}
-          {recordingStatus !== 'waiting' && <button className="button button-danger" onClick={onStop} disabled={savingRecord}>{savingRecord ? <LoaderCircle className="spin" size={15}/> : <Square size={14}/>} {savingRecord ? 'Menyimpan...' : 'Stop'}</button>}
-        </div>
-      </div>
       {recordingStatus !== 'waiting' && <div className="recording-diagnostics" aria-live="polite"><b>Diagnosis Rekaman</b><span>{diagnostics.length > 0 ? diagnostics.map((stage, index) => <small key={index}>{({ 'native-start-command': 'Perintah Rekam diterima aplikasi desktop', 'start-message-sent': 'Perintah Rekam dikirim ke browser internal', 'start-received': 'Skrip browser menerima perintah Rekam', 'iframe-start-sent': 'Sinyal diteruskan ke iframe', 'mouse-captured': 'Gerakan mouse tertangkap', 'iframe-event-relayed': 'Data iframe diterima browser utama' } as Record<string, string>)[stage] || stage}</small>) : <small>Menunggu sinyal diagnosis dari browser dan game...</small>}</span></div>}
  
       <div className="browser-shell">
