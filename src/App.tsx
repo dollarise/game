@@ -18,7 +18,7 @@ type SavedRecord = { id: string; title: string; duration_ms: number; event_count
 
 const DEFAULT_URL = 'https://1xlite-6487.com/en/games/solitaire';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const supabaseKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY) as string | undefined;
 const db: SupabaseClient | null = supabaseUrl && supabaseKey
  ? createClient(supabaseUrl, supabaseKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
  : null;
