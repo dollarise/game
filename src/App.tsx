@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { invoke, isTauri, listen } from './lib/desktop';
+import { invoke, isDesktop, listen } from './lib/desktop';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { decodeBoardSnapshot, inferGameStep, patternCertainty, type BoardCard } from './lib/solitaire-engine';
 import {
@@ -500,7 +500,7 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, diagnostics }
   url: string; onNavigate: (url: string) => void; suspend: boolean;
   recordingStatus: 'waiting' | 'recording' | 'paused'; diagnostics: string[];
 }) {
-  const desktop = isTauri();
+  const desktop = isDesktop();
   const [address, setAddress] = useState(url);
   const [currentUrl, setCurrentUrl] = useState(url);
   const [reloadKey, setReloadKey] = useState(0);
