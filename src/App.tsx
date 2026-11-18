@@ -627,7 +627,7 @@ function AuthScreen({ db }: { db: SupabaseClient | null }) {
       if (authError) setError(authError.message);
     } else {
       const { error: authError } = await db.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: window.location.origin,
+        redirectTo: isDesktop() ? 'https://kubanggame.pages.dev/' : window.location.origin,
       });
       if (authError) setError(authError.message);
       else setMessage('Jika email terdaftar, tautan pemulihan kata sandi akan dikirim ke inbox Anda.');
