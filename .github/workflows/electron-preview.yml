@@ -1,6 +1,15 @@
 name: GAME Electron Preview — Windows Installer
 
 on:
+  push:
+    branches:
+      - migration/electron-chromium
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - 'package.json'
+      - 'vite.config.ts'
+      - '.github/workflows/electron-preview.yml'
   pull_request:
     branches:
       - main
