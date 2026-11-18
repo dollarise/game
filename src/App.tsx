@@ -573,7 +573,7 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
           {recordingStatus !== 'waiting' && <button className="button button-danger" onClick={onStop} disabled={savingRecord}>{savingRecord ? <LoaderCircle className="spin" size={15}/> : <Square size={14}/>} {savingRecord ? 'Menyimpan...' : 'Stop'}</button>}
         </div>
       </div>
-      {recordingStatus !== 'waiting' && diagnostics.length > 0 && <div className="recording-diagnostics" aria-live="polite"><b>Diagnosis Rekaman</b><span>{diagnostics.map((stage, index) => <small key={index}>{({ 'start-received': 'Sinyal Rekam diterima', 'iframe-start-sent': 'Sinyal diteruskan ke iframe', 'mouse-captured': 'Gerakan mouse tertangkap', 'iframe-event-relayed': 'Data iframe diterima browser utama' } as Record<string, string>)[stage] || stage}</small>)}</span></div>}
+      {recordingStatus !== 'waiting' && <div className="recording-diagnostics" aria-live="polite"><b>Diagnosis Rekaman</b><span>{diagnostics.length > 0 ? diagnostics.map((stage, index) => <small key={index}>{({ 'start-received': 'Sinyal Rekam diterima', 'iframe-start-sent': 'Sinyal diteruskan ke iframe', 'mouse-captured': 'Gerakan mouse tertangkap', 'iframe-event-relayed': 'Data iframe diterima browser utama' } as Record<string, string>)[stage] || stage}</small>) : <small>Menunggu sinyal diagnosis dari browser dan game...</small>}</span></div>}
  
       <div className="browser-shell">
         <div className="browser-chrome">
