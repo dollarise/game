@@ -1,5 +1,5 @@
 export type DesktopRecordingInput = {
-  eventType: 'move' | 'click' | 'board';
+  eventType: 'click' | 'board';
   x: number | null;
   y: number | null;
   button: number | null;
