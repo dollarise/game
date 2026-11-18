@@ -1,9 +1,9 @@
 name: GAME Electron Preview — Windows Installer
 
 on:
-  push:
+  pull_request:
     branches:
-      - migration/electron-chromium
+      - main
     paths:
       - 'electron/**'
       - 'src/**'
