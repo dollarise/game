@@ -13,6 +13,7 @@ GAME is a Windows desktop workspace built with **Electron + Chromium**, React, T
 
 - Electron owns the desktop window and embeds a Chromium `WebContentsView`
 - The target website is rendered inside the GAME window; it does not launch the user's external Chrome
+- The local UI is served from the stable secure `game://app` origin, so browser storage and Supabase sessions can persist across app updates
 - The renderer communicates with Electron through a restricted preload bridge
 - Context isolation is enabled and Node integration is disabled
 - Chromium DevTools Protocol is used to install input capture in the game page and its child frames
