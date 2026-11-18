@@ -100,7 +100,7 @@ function registerIpc() {
 
   ipcMain.on('browser:recording-diagnostic', (event, stage) => {
     if (event.sender !== browserView.webContents) return;
-    const allowed = ['start-received', 'mouse-captured'];
+    const allowed = ['native-start-command', 'start-message-sent', 'start-received', 'iframe-start-sent', 'mouse-captured', 'iframe-event-relayed'];
     if (!allowed.includes(stage)) return;
     sendToUi('recording:diagnostic', { stage });
   });
