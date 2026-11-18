@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { invoke, isTauri } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { invoke, isTauri, listen } from './lib/desktop';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { decodeBoardSnapshot, inferGameStep, patternCertainty, type BoardCard } from './lib/solitaire-engine';
 import {
@@ -290,15 +289,18 @@ export default function App() {
     recordingStartedAt.current = null;
     setElapsedMs(accumulatedMs.current);
     setRecordingStatus('paused');
+    void invoke('recording_pause').catch((error) => ping('Gagal menjeda perekaman browser: ' + String(error)));
   }
 
   function resumeRecording() {
     if (recordingStatus !== 'paused') return;
     recordingStartedAt.current = Date.now();
     setRecordingStatus('recording');
+    void invoke('recording_resume').catch((error) => ping('Gagal melanjutkan perekaman browser: ' + String(error)));
   }
 
   async function stopRecording(status?: 'completed' | 'incomplete') {
+    void invoke('recording_stop').catch(() => undefined);
     if (status) recordingSaveStatusRef.current = status;
     if (!db || !session || !recordingSessionActive.current || savingRecordRef.current) return;
     if (recordingStartedAt.current !== null) {
@@ -340,6 +342,15 @@ export default function App() {
         ? 'Rekaman disimpan ke Buka Data > Belum Selesai.'
         : 'Rekaman berhasil disimpan ke Buka Data > Selesai.');
   }
+
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void listen<{ status: 'incomplete'; reason: string }>('recording-auto-stop', () => {
+      if (active) void stopRecording('incomplete');
+    }).then((stop) => { if (active) unlisten = stop; else stop(); });
+    return () => { active = false; unlisten?.(); };
+  }, []);
 
   async function signOut() {
     if (!db) return;
