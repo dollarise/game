@@ -385,8 +385,7 @@ export default function App() {
         <div className="content">
           {section === 'browser' ? (
             <BrowserFrame url={targetUrl} onNavigate={navigateTarget} suspend={settingsOpen}
-              recordingStatus={recordingStatus} elapsedMs={elapsedMs} eventCount={recordingEvents.length}
-              savingRecord={savingRecord} startingRecording={startingRecording} diagnostics={recordingDiagnostics} onStart={() => void startManualRecording()} onPause={pauseRecording} onResume={resumeRecording} onStop={() => void stopRecording()} />
+              recordingStatus={recordingStatus} diagnostics={recordingDiagnostics} />
           ) : section === 'data' ? (
             <>
               <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Riwayat kondisi papan, langkah permainan, dan aktivitas mouse Solitaire.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Kembali ke Rekam</button></div>
@@ -486,10 +485,9 @@ function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Sessio
   </section>;
 }
 
-function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, eventCount, savingRecord, startingRecording, diagnostics, onStart, onPause, onResume, onStop }: {
+function BrowserFrame({ url, onNavigate, suspend, recordingStatus, diagnostics }: {
   url: string; onNavigate: (url: string) => void; suspend: boolean;
-  recordingStatus: 'waiting' | 'recording' | 'paused'; elapsedMs: number; eventCount: number; savingRecord: boolean; startingRecording: boolean; diagnostics: string[]; onStart: () => void;
-  onPause: () => void; onResume: () => void; onStop: () => void;
+  recordingStatus: 'waiting' | 'recording' | 'paused'; diagnostics: string[];
 }) {
   const desktop = isTauri();
   const [address, setAddress] = useState(url);
