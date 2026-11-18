@@ -45,6 +45,9 @@ jobs:
         run: npm run test:desktop
 
       - name: Build React frontend
+        env:
+          VITE_SUPABASE_URL: https://ufnpohdmrndxtycnwkfa.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_BdmOq3_RoUtrtFwHE1o8jw_BBZQw9k-
         run: npm run build
 
       - name: Build Electron NSIS installer
@@ -53,7 +56,7 @@ jobs:
       - name: Upload Electron preview installer
         uses: actions/upload-artifact@v4
         with:
-          name: GAME-Electron-v1.5.0-Windows-Preview
+          name: GAME-Electron-v1.5.1-Windows-Preview
           path: release/*.exe
           if-no-files-found: error
           retention-days: 14
