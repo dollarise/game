@@ -51,7 +51,8 @@
           ]
         }
       ],
-      "artifactName": "GAME-v${version}-Windows-Setup.${ext}"
+      "artifactName": "GAME-v${version}-Windows-Setup.${ext}",
+      "icon": "build/icon.svg"
     },
     "nsis": {
       "oneClick": false,
