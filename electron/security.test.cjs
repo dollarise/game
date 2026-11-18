@@ -44,7 +44,7 @@ test('browser recorder observes structured Solitaire GetActiveGame board respons
 
 test('browser preload accepts Solitaire board-capture diagnostics', () => {
   const source = fs.readFileSync(path.join(__dirname, 'browser-preload.cjs'), 'utf8');
-  for (const stage of ['board-elements-not-found', 'board-cards-detected', 'board-snapshot-captured']) {
+  for (const stage of ['board-elements-not-found', 'board-cards-detected', 'board-snapshot-captured', 'game-api-board-captured']) {
     assert.ok(source.includes(stage), 'missing diagnostic stage: ' + stage);
   }
 });
