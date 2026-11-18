@@ -105,4 +105,4 @@ module.exports = String.raw`(() => {
   observe();
   if (!document.documentElement) document.addEventListener('DOMContentLoaded', observe, { once: true });
   scheduleBoard();
-})();;
+})();`;
