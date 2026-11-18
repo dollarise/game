@@ -62,8 +62,6 @@ export default function App() {
   const [recordingEvents, setRecordingEvents] = useState<MouseEventData[]>([]);
   const recordingEventsRef = useRef<MouseEventData[]>([]);
   const recordingSaveStatusRef = useRef<'completed' | 'incomplete'>('completed');
-  const autoStopRecordingRef = useRef<() => void>(() => undefined);
-  const autoCompleteRecordingRef = useRef<() => void>(() => undefined);
   const [elapsedMs, setElapsedMs] = useState(0);
   const recordingStartedAt = useRef<number | null>(null);
   const recordingSessionActive = useRef(false);
@@ -347,8 +345,6 @@ export default function App() {
       ? 'Give up terdeteksi. Rekaman disimpan ke Buka Data > Belum Selesai.'
       : 'Rekaman berhasil disimpan ke Buka Data > Selesai.');
   }
-  autoStopRecordingRef.current = () => { void stopRecording('incomplete'); };
-  autoCompleteRecordingRef.current = () => { void stopRecording('completed'); };
 
   async function signOut() {
     if (!db) return;
