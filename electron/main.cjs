@@ -1,5 +1,11 @@
-const { app, BrowserWindow, WebContentsView, ipcMain } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, protocol, net } = require('electron');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'game',
+  privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true }
+}]);
 
 const APP_URL = process.env.VITE_DEV_SERVER_URL || 'http://127.0.0.1:1420';
 const DEFAULT_GAME_URL = 'https://1xlite-6487.com/en/games/solitaire';
@@ -281,7 +287,7 @@ function createWindow() {
     .catch((error) => console.error('[GAME] Failed to load the default game page:', error));
 
   if (process.env.VITE_DEV_SERVER_URL) void mainWindow.loadURL(APP_URL);
-  else void mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
+  else void mainWindow.loadURL('game://app/index.html');
 
   mainWindow.on('closed', () => {
     recordingActive = false;
@@ -345,6 +351,18 @@ ipcMain.handle('game:invoke', async (event, command, args = {}) => {
 });
 
 app.whenReady().then(() => {
+  if (!process.env.VITE_DEV_SERVER_URL) {
+    protocol.handle('game', (request) => {
+      const url = new URL(request.url);
+      const relativePath = decodeURIComponent(url.pathname).replace(/^\\/+/, '') || 'index.html';
+      const root = path.resolve(app.getAppPath(), 'dist');
+      const filePath = path.resolve(root, relativePath);
+      if (filePath !== root && !filePath.startsWith(root + path.sep)) {
+        return new Response('Not found', { status: 404 });
+      }
+      return net.fetch(pathToFileURL(filePath).toString());
+    });
+  }
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
