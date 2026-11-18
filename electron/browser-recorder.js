@@ -11,11 +11,11 @@
   window.__GAME_MOUSE_RECORDING_INSTALLED__ = true;
   const invoke = (command, payload = {}) => {
     if (command === 'recording_diagnostic') {
-      window.top.postMessage({ type: 'GAME_MOUSE_RECORDING_DIAGNOSTIC', stage: payload.stage }, '*');
+      window.top.postMessage({ type: 'GAME_ELECTRON_RECORDING_DIAGNOSTIC_TO_NATIVE', stage: payload.stage }, '*');
       return Promise.resolve();
     }
     if (command === 'recording_event') {
-      window.top.postMessage({ type: 'GAME_MOUSE_RECORDING_EVENT', payload }, '*');
+      window.top.postMessage({ type: 'GAME_ELECTRON_RECORDING_EVENT_TO_NATIVE', payload }, '*');
       return Promise.resolve();
     }
     return Promise.reject(new Error('Perintah perekam tidak dikenal.'));
