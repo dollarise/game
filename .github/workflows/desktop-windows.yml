@@ -12,6 +12,9 @@ permissions:
 
 jobs:
   build-windows:
+    # Electron migration has its own installer workflow; do not run the
+    # legacy Tauri artifact uploader against the Electron release directory.
+    if: ${{ !startsWith(github.head_ref || github.ref_name, 'migration/') }}
     runs-on: windows-latest
     env:
       VITE_SUPABASE_URL: https://ufnpohdmrndxtycnwkfa.supabase.co

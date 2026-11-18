@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { invoke, isTauri } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { desktopInvoke, desktopListen, isDesktop } from './lib/desktop';
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import { decodeBoardSnapshot, inferGameStep, patternCertainty, type BoardCard } from './lib/solitaire-engine';
 import {
@@ -13,13 +12,13 @@ import {
 
 type Section = 'browser' | 'data' | 'admin';
 type RecordingStartResult = { stages: string[]; browser_error: string | null };
-type MouseEventData = { type: 'move' | 'click' | 'board' | 'game_step'; x: number; y: number; button?: number; elapsed_ms: number; label?: string };
+type MouseEventData = { type: 'click' | 'board' | 'game_step'; x: number; y: number; button?: number; elapsed_ms: number; label?: string };
 type PatternAlert = { status: 'completed' | 'incomplete'; title: string; cards: BoardCard[]; steps: string[]; certainty: 'exact' | 'partial' };
 type SavedRecord = { id: string; title: string; duration_ms: number; event_count: number; status: 'completed' | 'incomplete'; events?: MouseEventData[]; recorded_at: string };
 
 const DEFAULT_URL = 'https://1xlite-6487.com/en/games/solitaire';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const supabaseKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY) as string | undefined;
 const db: SupabaseClient | null = supabaseUrl && supabaseKey
  ? createClient(supabaseUrl, supabaseKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
  : null;
@@ -27,6 +26,24 @@ const db: SupabaseClient | null = supabaseUrl && supabaseKey
 function validUrl(value: string) {
   try { const parsed = new URL(value); return parsed.protocol === 'https:' || parsed.protocol === 'http:'; }
   catch { return false; }
+}
+
+async function createUniqueRecordingTitle(userId: string, recordedAt: string) {
+  if (!db) throw new Error('Database belum tersedia.');
+  const dateLabel = new Date(recordedAt).toLocaleDateString('id-ID', {
+    day: '2-digit', month: '2-digit', year: 'numeric'
+  });
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const random = new Uint32Array(1);
+    window.crypto.getRandomValues(random);
+    const number = String(100000 + (random[0] % 900000));
+    const title = number + ' - ' + dateLabel;
+    const { data, error } = await db.from('game_mouse_recordings')
+      .select('id').eq('user_id', userId).eq('title', title).maybeSingle();
+    if (error) throw error;
+    if (!data) return title;
+  }
+  throw new Error('Tidak berhasil membuat nomor rekaman unik. Silakan coba Stop kembali.');
 }
 
 function formatDuration(milliseconds: number) {
@@ -60,7 +77,6 @@ export default function App() {
   const [mobileNav, setMobileNav] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState<'waiting' | 'recording' | 'paused'>('waiting');
   const [startingRecording, setStartingRecording] = useState(false);
-  const [recordingEvents, setRecordingEvents] = useState<MouseEventData[]>([]);
   const [recordingDiagnostics, setRecordingDiagnostics] = useState<string[]>([]);
   const recordingEventsRef = useRef<MouseEventData[]>([]);
   const recordingSaveStatusRef = useRef<'completed' | 'incomplete'>('completed');
@@ -126,7 +142,6 @@ export default function App() {
     boardMatchChecked.current = false;
     setPatternAlert(null);
     setElapsedMs(0);
-    setRecordingEvents([]);
     setRecordingStatus('recording');
     setSection('browser');
     ping(message);
@@ -135,7 +150,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
     let unlistenDiagnostic: (() => void) | undefined;
-    void listen<{ stage: string }>('recording-diagnostic', (event) => {
+    void desktopListen<{ stage: string }>('recording-diagnostic', (event) => {
       if (active) setRecordingDiagnostics((items) => [...items, event.payload.stage].slice(-8));
     }).then((stop) => { if (active) unlistenDiagnostic = stop; else stop(); });
     return () => { active = false; unlistenDiagnostic?.(); };
@@ -144,13 +159,13 @@ export default function App() {
   useEffect(() => {
     let active = true;
     let unlistenInput: (() => void) | undefined;
-    void listen<Omit<MouseEventData, 'elapsed_ms'> & { type: 'move' | 'click' | 'board' }>('recording-input', async (event) => {
-      if (!active || recordingStartedAt.current === null) return;
+    void desktopListen<Omit<MouseEventData, 'elapsed_ms'> & { type: 'click' | 'board' }>('recording-input', async (event) => {
+      if (!active || recordingStartedAt.current === null || (event.payload.type as string) === 'move') return;
       const elapsed = accumulatedMs.current + Date.now() - recordingStartedAt.current;
       const payload = event.payload;
       if (payload.type === 'board') {
         const snapshot = decodeBoardSnapshot(payload.label);
-        if (snapshot && snapshot.cards.length > 0 && !boardMatchChecked.current && db && session) {
+        if (snapshot && snapshot.cards.length > 0 && !boardMatchChecked.current && db) {
           boardMatchChecked.current = true;
           const currentSession = sessionRef.current;
           if (!currentSession) return;
@@ -202,7 +217,6 @@ export default function App() {
       }
       const nextEvents = [...currentEvents, { ...payload, x: payload.x ?? 0, y: payload.y ?? 0, elapsed_ms: Math.round(elapsed) }];
       recordingEventsRef.current = nextEvents;
-      setRecordingEvents(nextEvents);
     }).then((stop) => { if (active) unlistenInput = stop; else stop(); });
     // The game page supplies mouse data only; recording controls stay in GAME.
     return () => { active = false; unlistenInput?.(); };
@@ -271,7 +285,7 @@ export default function App() {
     // depend on the WebView2 command/event round-trip, which can be delayed.
     beginRecordingSession('Timer rekaman berjalan. Silakan mainkan Solitaire.');
     try {
-      const result = await invoke<RecordingStartResult>('browser_start_recording');
+      const result = await desktopInvoke<RecordingStartResult>('browser_start_recording');
       setRecordingDiagnostics(result.stages);
       if (result.browser_error) ping('Perintah Rekam diterima aplikasi, tetapi gagal diteruskan ke browser: ' + result.browser_error);
     } catch (error) {
@@ -313,7 +327,17 @@ export default function App() {
     savingRecordRef.current = true;
     setSavingRecord(true);
     const recordedAt = new Date().toISOString();
-    const title = 'Solitaire - ' + new Date(recordedAt).toLocaleString('id-ID');
+    let title: string;
+    try {
+      title = await createUniqueRecordingTitle(session.user.id, recordedAt);
+    } catch (error) {
+      savingRecordRef.current = false;
+      setSavingRecord(false);
+      setRecordingStatus('paused');
+      setElapsedMs(duration);
+      ping('Gagal membuat nomor rekaman. Data masih tersedia; tekan Stop lagi untuk mencoba: ' + String(error));
+      return;
+    }
     const { data, error } = await db.from('game_mouse_recordings')
       .insert({ user_id: session.user.id, title, duration_ms: Math.round(duration), event_count: events.length, events, status: saveStatus })
       .select('id,title,duration_ms,event_count,status,recorded_at').single();
@@ -329,13 +353,12 @@ export default function App() {
     recordingSessionActive.current = false;
     setRecordingStatus('waiting');
     recordingEventsRef.current = [];
-    setRecordingEvents([]);
     setElapsedMs(0);
     accumulatedMs.current = 0;
     recordingStartedAt.current = null;
     recordingSaveStatusRef.current = 'completed';
     ping(events.length === 0
-      ? 'Sesi disimpan ke Buka Data > Belum Selesai, tetapi tidak ada aktivitas mouse yang diterima.'
+      ? 'Sesi disimpan ke Buka Data > Belum Selesai, tetapi tidak ada klik atau perubahan papan yang diterima.'
       : saveStatus === 'incomplete'
         ? 'Rekaman disimpan ke Buka Data > Belum Selesai.'
         : 'Rekaman berhasil disimpan ke Buka Data > Selesai.');
@@ -357,14 +380,23 @@ export default function App() {
         <div className="brand"><div className="brand-mark"><Globe2 size={21} /></div><div><b>GAME</b><span>WEB WORKSPACE</span></div><button className="mobile-close icon-button" onClick={() => setMobileNav(false)} aria-label="Tutup menu"><X size={18}/></button></div>
         <div className="workspace-label">WORKSPACE</div>
         <nav className="side-nav">
-          <button className={section === 'browser' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('browser'); setMobileNav(false); }}><MonitorPlay size={18}/><span>{recordingStatus !== 'waiting' ? formatDuration(elapsedMs) : 'Rekam'}</span>{section === 'browser' && <span className="nav-dot"/>}</button>
+          <button className={section === 'browser' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('browser'); setMobileNav(false); }}><MonitorPlay size={18}/><span>Browser</span>{section === 'browser' && <span className="nav-dot"/>}</button>
           <button className={section === 'data' ? 'nav-item active' : 'nav-item'} onClick={() => { if (recordingStatus !== 'waiting') { ping('Tekan Stop untuk menyimpan rekaman sebelum membuka Buka Data.'); return; } setSection('data'); setMobileNav(false); }}><HardDrive size={18}/><span>Buka Data</span>{records.length > 0 && <small>{records.length}</small>}</button>
           {isSuperAdmin && <button className={section === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('admin'); setMobileNav(false); }}><Users size={18}/><span>Manajemen Pengguna</span>{section === 'admin' && <span className="nav-dot"/>}</button>}
+          <div className="recording-toolbar sidebar-recording-toolbar">
+            <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Siap Merekam' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Tekan Rekam di aplikasi untuk memulai sesi' : recordingEventsRef.current.length.toLocaleString('id-ID') + ' peristiwa permainan terekam'}</span></div></div>
+            <div className="recording-actions">
+              {recordingStatus === 'waiting' && <button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); void startManualRecording(); }} disabled={startingRecording}><Play size={15}/> {startingRecording ? 'Memulai...' : 'Rekam'}</button>}
+              {recordingStatus === 'recording' && <button className="button button-secondary" onClick={pauseRecording}><Pause size={15}/> Jeda</button>}
+              {recordingStatus === 'paused' && <button className="button button-primary" onClick={resumeRecording}><Play size={15}/> Lanjutkan</button>}
+              {recordingStatus !== 'waiting' && <button className="button button-danger" onClick={() => void stopRecording()} disabled={savingRecord}>{savingRecord ? <LoaderCircle className="spin" size={15}/> : <Square size={14}/>} {savingRecord ? 'Menyimpan...' : 'Stop'}</button>}
+            </div>
+          </div>
         </nav>
         <div className="sidebar-bottom">
           <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Rekam langkah dan kondisi Solitaire</span></div></div>
           <button className="settings-link" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={17}/> Pengaturan <ChevronDown size={15}/></button>
-          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.4.8</span></div>
+          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.5.7</span></div>
         </div>
       </aside>
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
@@ -376,13 +408,12 @@ export default function App() {
         <div className="content">
           {section === 'browser' ? (
             <BrowserFrame url={targetUrl} onNavigate={navigateTarget} suspend={settingsOpen}
-              recordingStatus={recordingStatus} elapsedMs={elapsedMs} eventCount={recordingEvents.length}
-              savingRecord={savingRecord} startingRecording={startingRecording} diagnostics={recordingDiagnostics} onStart={() => void startManualRecording()} onPause={pauseRecording} onResume={resumeRecording} onStop={() => void stopRecording()} />
+              recordingStatus={recordingStatus} diagnostics={recordingDiagnostics} />
           ) : section === 'data' ? (
             <>
-              <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Riwayat kondisi papan, langkah permainan, dan aktivitas mouse Solitaire.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Kembali ke Rekam</button></div>
+              <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Riwayat kondisi papan dan langkah permainan Solitaire.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Kembali ke Rekam</button></div>
               <div className="data-summary"><div className="summary-icon"><BookmarkPlus size={19}/></div><div><span>Total sesi rekaman tersimpan</span><b>{records.length} <small>sesi</small></b></div><div className="summary-divider"/><div className="summary-meta"><span>Rekaman terakhir</span><b>{records[0] ? new Date(records[0].recorded_at).toLocaleString('id-ID') : 'Belum ada data'}</b></div></div>
-              <div className="data-panel"><div className="panel-heading"><div><h2>Rekaman Solitaire</h2><span>Data aktivitas mouse tersimpan per sesi, terpisah untuk setiap akun</span></div><div className="search-box"><Search size={16}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari sesi rekaman..."/></div></div><div className="data-tabs"><button className={dataTab === 'completed' ? 'data-tab active' : 'data-tab'} onClick={() => setDataTab('completed')}>Selesai <span>{records.filter((item) => item.status === 'completed').length}</span></button><button className={dataTab === 'incomplete' ? 'data-tab active' : 'data-tab'} onClick={() => setDataTab('incomplete')}>Belum Selesai <span>{records.filter((item) => item.status === 'incomplete').length}</span></button></div>
+              <div className="data-panel"><div className="panel-heading"><div><h2>Rekaman Solitaire</h2><span>Data klik dan kondisi papan tersimpan per sesi, terpisah untuk setiap akun</span></div><div className="search-box"><Search size={16}/><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari sesi rekaman..."/></div></div><div className="data-tabs"><button className={dataTab === 'completed' ? 'data-tab active' : 'data-tab'} onClick={() => setDataTab('completed')}>Selesai <span>{records.filter((item) => item.status === 'completed').length}</span></button><button className={dataTab === 'incomplete' ? 'data-tab active' : 'data-tab'} onClick={() => setDataTab('incomplete')}>Belum Selesai <span>{records.filter((item) => item.status === 'incomplete').length}</span></button></div>
                 {loading ? <div className="empty-state"><LoaderCircle className="spin" size={25}/><span>Memuat data...</span></div> : filteredRecords.length === 0 ? <div className="empty-state"><div className="empty-icon"><HardDrive size={23}/></div><b>{search ? 'Data tidak ditemukan' : 'Belum ada rekaman tersimpan'}</b><span>{search ? 'Coba kata kunci lain.' : 'Buka menu Rekam, lalu klik Play / Start Game di dalam Solitaire.'}</span>{!search && <button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}>Buka Rekam</button>}</div> :
                 <div className="record-list">{filteredRecords.map((item) => <div className="record-row" key={item.id}><div className="record-site-icon"><MonitorPlay size={18}/></div><div className="record-main"><b>{item.title}</b>{item.status === 'incomplete' && <small className="record-status-incomplete">Belum Selesai · Give up</small>}<span>{formatDuration(item.duration_ms)} · {item.event_count.toLocaleString('id-ID')} peristiwa terekam</span><small>{new Date(item.recorded_at).toLocaleString('id-ID')}</small></div><button className="button button-secondary" onClick={() => void openRecord(item)} title="Buka data rekaman">Buka Data</button><button className="icon-button danger-hover" onClick={() => void deleteRecord(item.id)} title="Hapus rekaman"><Trash2 size={16}/></button></div>)}</div>}
               </div>
@@ -390,7 +421,7 @@ export default function App() {
           ) : isSuperAdmin ? <AdminPanel db={db} session={session} ping={ping} /> : <div className="empty-state"><Shield size={24}/><b>Akses ditolak</b><span>Menu ini hanya tersedia untuk Super Admin.</span></div>}
         </div>
       </main>
-      {selectedRecord && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedRecord(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">DETAIL REKAMAN</div><h2>{selectedRecord.title}</h2></div><button className="icon-button" onClick={() => setSelectedRecord(null)} aria-label="Tutup"><X size={19}/></button></div><div className="record-detail-summary"><div><span>Durasi aktif</span><b>{formatDuration(selectedRecord.duration_ms)}</b></div><div><span>Total aktivitas</span><b>{selectedRecord.event_count.toLocaleString('id-ID')}</b></div></div><div className="record-event-list">{detailLoading ? <div className="empty-state"><LoaderCircle className="spin" size={22}/>Memuat detail rekaman...</div> : <><div className="record-event-head"><b>Langkah permainan</b><span>{(selectedRecord.events || []).filter((event) => event.type === 'game_step').length} langkah teramati dari perubahan papan</span></div>{(selectedRecord.events || []).filter((event) => event.type === 'game_step').map((event, index) => <div className="record-event-row" key={'step-' + index}><span>{index + 1}</span><b>Langkah {index + 1}</b><span>{formatDuration(event.elapsed_ms)}</span><span>{(() => { try { return JSON.parse(event.label || '').description || 'Langkah teramati'; } catch { return 'Langkah teramati'; } })()}</span><small>Berdasarkan perubahan kondisi papan, bukan tebakan dari koordinat mouse.</small></div>)}{(selectedRecord.events || []).filter((event) => event.type === 'game_step').length === 0 && <div className="empty-state"><span>Belum ada langkah permainan terstruktur pada rekaman ini.</span></div>}<div className="record-event-head"><b>Aktivitas mouse dan kondisi papan</b><span>Menampilkan maksimal 200 peristiwa pendukung</span></div>{(selectedRecord.events || []).filter((event) => event.type !== 'game_step').slice(0, 200).map((event, index) => <div className="record-event-row" key={'event-' + index}><span>{index + 1}</span><b>{event.type === 'move' ? 'Gerak mouse' : event.type === 'board' ? 'Kondisi papan' : 'Klik'}</b><span>{formatDuration(event.elapsed_ms)}</span>{event.type === 'board' ? <span>{decodeBoardSnapshot(event.label)?.cards.length || 0} elemen kartu terdeteksi</span> : <span>X: {Math.round(event.x)} · Y: {Math.round(event.y)}</span>}{event.type === 'click' && <small>{event.label || (event.button === 2 ? 'Klik kanan' : 'Klik kiri')}</small>}</div>)}</>}</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSelectedRecord(null)}>Tutup</button></div></section></div>}
+      {selectedRecord && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSelectedRecord(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">DETAIL REKAMAN</div><h2>{selectedRecord.title}</h2></div><button className="icon-button" onClick={() => setSelectedRecord(null)} aria-label="Tutup"><X size={19}/></button></div><div className="record-detail-summary"><div><span>Durasi aktif</span><b>{formatDuration(selectedRecord.duration_ms)}</b></div><div><span>Total aktivitas</span><b>{selectedRecord.event_count.toLocaleString('id-ID')}</b></div></div><div className="record-event-list">{detailLoading ? <div className="empty-state"><LoaderCircle className="spin" size={22}/>Memuat detail rekaman...</div> : <><div className="record-event-head"><b>Langkah permainan</b><span>{(selectedRecord.events || []).filter((event) => event.type === 'game_step').length} langkah teramati dari perubahan papan</span></div>{(selectedRecord.events || []).filter((event) => event.type === 'game_step').map((event, index) => <div className="record-event-row" key={'step-' + index}><span>{index + 1}</span><b>Langkah {index + 1}</b><span>{formatDuration(event.elapsed_ms)}</span><span>{(() => { try { return JSON.parse(event.label || '').description || 'Langkah teramati'; } catch { return 'Langkah teramati'; } })()}</span><small>Berdasarkan perubahan kondisi papan, bukan tebakan dari koordinat mouse.</small></div>)}{(selectedRecord.events || []).filter((event) => event.type === 'game_step').length === 0 && <div className="empty-state"><span>Belum ada langkah permainan terstruktur pada rekaman ini.</span></div>}<div className="record-event-head"><b>Klik dan kondisi papan</b><span>Menampilkan maksimal 200 peristiwa pendukung</span></div>{(selectedRecord.events || []).filter((event) => event.type !== 'game_step').slice(0, 200).map((event, index) => <div className="record-event-row" key={'event-' + index}><span>{index + 1}</span><b>{event.type === 'board' ? 'Kondisi papan' : 'Klik'}</b><span>{formatDuration(event.elapsed_ms)}</span>{event.type === 'board' ? <span>{decodeBoardSnapshot(event.label)?.cards.length || 0} elemen kartu terdeteksi</span> : <span>{event.label || (event.button === 2 ? 'Klik kanan' : 'Klik kiri')}</span>}{event.type === 'click' && <small>{event.label || (event.button === 2 ? 'Klik kanan' : 'Klik kiri')}</small>}</div>)}</>}</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSelectedRecord(null)}>Tutup</button></div></section></div>}
       {settingsOpen && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setSettingsOpen(false); }}><section className="settings-modal"><div className="modal-head"><div><div className="eyebrow">KONFIGURASI</div><h2>Pengaturan Website</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="Tutup"><X size={19}/></button></div><p className="modal-copy">Tentukan alamat website yang akan dibuka pada browser internal GAME.</p><label className="field-label" htmlFor="target-url">URL Website Tujuan</label><input id="target-url" className="url-input" value={urlDraft} onChange={(e) => setUrlDraft(e.target.value)} placeholder="https://contoh.com" onKeyDown={(e) => { if (e.key === 'Enter') void saveSettings(); }}/><div className="field-hint"><ShieldCheck size={14}/> Gunakan alamat lengkap dengan https:// atau http://</div><div className="modal-actions"><button className="button button-secondary" onClick={() => setSettingsOpen(false)}>Batal</button><button className="button button-primary" onClick={() => void saveSettings()} disabled={saving}>{saving ? <LoaderCircle className="spin" size={16}/> : <Check size={16}/>} Simpan Pengaturan</button></div></section></div>}
       {patternAlert && <div className="modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) setPatternAlert(null); }}><section className="settings-modal recording-detail"><div className="modal-head"><div><div className="eyebrow">{patternAlert.certainty === "exact" ? "IDENTITAS POLA COCOK" : "KANDIDAT POLA DITEMUKAN"}</div><h2>{patternAlert.status === 'completed' ? 'Pola pernah diselesaikan' : 'Pola pernah dimainkan'}</h2></div><button className="icon-button" onClick={() => setPatternAlert(null)} aria-label="Tutup"><X size={19}/></button></div><p className="modal-copy">{patternAlert.certainty === 'exact' ? 'Identitas seluruh 52 kartu cocok' : 'Susunan kartu yang terlihat cocok sebagai kandidat, tetapi belum merupakan kecocokan pasti karena ada identitas kartu tertutup yang belum diketahui'} dengan rekaman <b>{patternAlert.title}</b> pada menu Buka Data → {patternAlert.status === 'completed' ? 'Selesai' : 'Belum Selesai'}.</p>{patternAlert.status === 'completed' ? <><h3>Langkah permainan yang berhasil diamati</h3>{patternAlert.steps.length ? <ol>{patternAlert.steps.map((step, index) => <li key={index}>{step}</li>)}</ol> : <p>Belum ada langkah terstruktur pada rekaman ini. Klik mouse lama tidak dianggap sebagai bukti pemindahan kartu.</p>}</> : <><h3>Langkah terakhir yang teramati</h3>{patternAlert.steps.length ? <ol>{patternAlert.steps.slice(-5).map((step, index) => <li key={index}>{step}</li>)}</ol> : <p>Belum ada langkah kartu yang dapat dipastikan dari rekaman ini.</p>}<h3>Informasi kartu pada pola</h3><p>{patternAlert.cards.filter((card) => !card.faceUp).length} kartu masih tertutup/tidak terbaca dari pola ini.</p><ul>{patternAlert.cards.filter((card) => !card.faceUp).slice(0, 20).map((card, index) => <li key={index}>Posisi {card.slot}: kartu belum terbuka</li>)}</ul><p>Kartu tertutup hanya akan diberi identitas jika pernah terbuka dan terekam pada pola yang sama.</p></>}<div className="modal-actions"><button className="button button-primary" onClick={() => setPatternAlert(null)}>Mengerti</button></div></section></div>}
       {notice && <div className="toast"><Check size={16}/>{notice}</div>}
@@ -477,12 +508,11 @@ function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Sessio
   </section>;
 }
 
-function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, eventCount, savingRecord, startingRecording, diagnostics, onStart, onPause, onResume, onStop }: {
+function BrowserFrame({ url, onNavigate, suspend, recordingStatus, diagnostics }: {
   url: string; onNavigate: (url: string) => void; suspend: boolean;
-  recordingStatus: 'waiting' | 'recording' | 'paused'; elapsedMs: number; eventCount: number; savingRecord: boolean; startingRecording: boolean; diagnostics: string[]; onStart: () => void;
-  onPause: () => void; onResume: () => void; onStop: () => void;
+  recordingStatus: 'waiting' | 'recording' | 'paused'; diagnostics: string[];
 }) {
-  const desktop = isTauri();
+  const desktop = isDesktop();
   const [address, setAddress] = useState(url);
   const [currentUrl, setCurrentUrl] = useState(url);
   const [reloadKey, setReloadKey] = useState(0);
@@ -496,16 +526,16 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
   useEffect(() => {
     if (url !== lastPropUrl.current) {
       lastPropUrl.current = url; setAddress(url); setCurrentUrl(url); setHistory([url]); setHistoryIndex(0);
-      if (desktop) void invoke('browser_navigate', { url }).catch((error) => setNativeError(String(error)));
+      if (desktop) void desktopInvoke('browser_navigate', { url }).catch((error) => setNativeError(String(error)));
     }
   }, [url, desktop]);
 
   useEffect(() => {
     if (!desktop) return;
-    if (suspend) void invoke('browser_set_visible', { visible: false }).catch((error) => setNativeError(String(error)));
+    if (suspend) void desktopInvoke('browser_set_visible', { visible: false }).catch((error) => setNativeError(String(error)));
     else {
       const rect = viewportRef.current?.getBoundingClientRect();
-      if (rect && rect.width > 1 && rect.height > 1) void invoke('browser_set_bounds', { x: Math.max(0, rect.left), y: Math.max(0, rect.top), width: rect.width, height: rect.height }).catch((error) => setNativeError(String(error)));
+      if (rect && rect.width > 1 && rect.height > 1) void desktopInvoke('browser_set_bounds', { x: Math.max(0, rect.left), y: Math.max(0, rect.top), width: rect.width, height: rect.height }).catch((error) => setNativeError(String(error)));
     }
   }, [desktop, suspend]);
 
@@ -513,13 +543,15 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
     if (!desktop) return;
     let active = true;
     let unlisten: (() => void) | undefined;
-    void listen<string>('browser-url-changed', (event) => {
+    void desktopListen<string>('browser-url-changed', (event) => {
       if (!active || !validUrl(event.payload)) return;
       const nextUrl = new URL(event.payload).toString();
       setAddress(nextUrl);
       setCurrentUrl(nextUrl);
       lastPropUrl.current = nextUrl;
-      onNavigate(nextUrl);
+      // Page redirects and in-game routes are runtime navigation only.
+      // Keep the account's saved launch URL unchanged; explicit address-bar
+      // navigation still persists through navigate() -> onNavigate().
     }).then((stop) => { if (active) unlisten = stop; else stop(); });
     return () => { active = false; unlisten?.(); };
   }, [desktop]);
@@ -532,15 +564,15 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
       const element = viewportRef.current;
       if (!element || disposed) return;
       const rect = element.getBoundingClientRect();
-      if (rect.width < 2 || rect.height < 2) { await invoke('browser_set_visible', { visible: false }); return; }
-      await invoke('browser_set_bounds', { x: Math.max(0, rect.left), y: Math.max(0, rect.top), width: rect.width, height: rect.height });
+      if (rect.width < 2 || rect.height < 2) { await desktopInvoke('browser_set_visible', { visible: false }); return; }
+      await desktopInvoke('browser_set_bounds', { x: Math.max(0, rect.left), y: Math.max(0, rect.top), width: rect.width, height: rect.height });
       if (!disposed) setNativeReady(true);
     };
     const onLayout = () => { void syncBounds().catch((error) => setNativeError(String(error))); };
     void syncBounds().catch((error) => setNativeError(String(error)));
     window.addEventListener('resize', onLayout); window.addEventListener('scroll', onLayout, true);
     if (viewportRef.current && typeof ResizeObserver !== 'undefined') { observer = new ResizeObserver(onLayout); observer.observe(viewportRef.current); }
-    return () => { disposed = true; observer?.disconnect(); window.removeEventListener('resize', onLayout); window.removeEventListener('scroll', onLayout, true); void invoke('browser_set_visible', { visible: false }).catch(() => undefined); };
+    return () => { disposed = true; observer?.disconnect(); window.removeEventListener('resize', onLayout); window.removeEventListener('scroll', onLayout, true); void desktopInvoke('browser_set_visible', { visible: false }).catch(() => undefined); };
   }, [desktop]);
 
   async function navigate(value: string, addHistory = true) {
@@ -549,34 +581,25 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
     if (!validUrl(next)) return;
     next = new URL(next).toString(); lastPropUrl.current = next; setCurrentUrl(next); setAddress(next);
     if (addHistory) { const nextHistory = [...history.slice(0, historyIndex + 1), next]; setHistory(nextHistory); setHistoryIndex(nextHistory.length - 1); }
-    if (desktop) { try { await invoke('browser_navigate', { url: next }); } catch (error) { setNativeError(String(error)); } }
+    if (desktop) { try { await desktopInvoke('browser_navigate', { url: next }); } catch (error) { setNativeError(String(error)); } }
     else setReloadKey((value) => value + 1);
     onNavigate(next);
   }
   function goBack() {
-    if (desktop) { void invoke('browser_back').catch((error) => setNativeError(String(error))); return; }
+    if (desktop) { void desktopInvoke('browser_back').catch((error) => setNativeError(String(error))); return; }
     if (historyIndex <= 0) return; const nextIndex = historyIndex - 1; setHistoryIndex(nextIndex); void navigate(history[nextIndex], false);
   }
   function goForward() {
-    if (desktop) { void invoke('browser_forward').catch((error) => setNativeError(String(error))); return; }
+    if (desktop) { void desktopInvoke('browser_forward').catch((error) => setNativeError(String(error))); return; }
     if (historyIndex >= history.length - 1) return; const nextIndex = historyIndex + 1; setHistoryIndex(nextIndex); void navigate(history[nextIndex], false);
   }
   function reload() {
-    if (desktop) void invoke('browser_reload').catch((error) => setNativeError(String(error)));
+    if (desktop) void desktopInvoke('browser_reload').catch((error) => setNativeError(String(error)));
     else setReloadKey((value) => value + 1);
   }
   return (
     <section className="browser-workspace">
-      <div className="recording-toolbar">
-        <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Siap Merekam' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Tekan Rekam di aplikasi untuk memulai sesi' : eventCount.toLocaleString('id-ID') + ' aktivitas mouse terekam'}</span></div></div>
-        <div className="recording-actions">
-          {recordingStatus === 'waiting' && <button className="button button-primary" onClick={onStart} disabled={startingRecording}><Play size={15}/> {startingRecording ? 'Memulai...' : 'Rekam'}</button>}
-          {recordingStatus === 'recording' && <button className="button button-secondary" onClick={onPause}><Pause size={15}/> Jeda</button>}
-          {recordingStatus === 'paused' && <button className="button button-primary" onClick={onResume}><Play size={15}/> Lanjutkan</button>}
-          {recordingStatus !== 'waiting' && <button className="button button-danger" onClick={onStop} disabled={savingRecord}>{savingRecord ? <LoaderCircle className="spin" size={15}/> : <Square size={14}/>} {savingRecord ? 'Menyimpan...' : 'Stop'}</button>}
-        </div>
-      </div>
-      {recordingStatus !== 'waiting' && <div className="recording-diagnostics" aria-live="polite"><b>Diagnosis Rekaman</b><span>{diagnostics.length > 0 ? diagnostics.map((stage, index) => <small key={index}>{({ 'native-start-command': 'Perintah Rekam diterima aplikasi desktop', 'start-message-sent': 'Perintah Rekam dikirim ke browser internal', 'start-received': 'Skrip browser menerima perintah Rekam', 'iframe-start-sent': 'Sinyal diteruskan ke iframe', 'mouse-captured': 'Gerakan mouse tertangkap', 'iframe-event-relayed': 'Data iframe diterima browser utama' } as Record<string, string>)[stage] || stage}</small>) : <small>Menunggu sinyal diagnosis dari browser dan game...</small>}</span></div>}
+      {recordingStatus !== 'waiting' && <div className="recording-diagnostics" aria-live="polite"><b>Diagnosis Rekaman</b><span>{diagnostics.length > 0 ? diagnostics.map((stage, index) => <small key={index}>{({ 'native-start-command': 'Perintah Rekam diterima aplikasi desktop', 'start-message-sent': 'Perintah Rekam dikirim ke browser internal', 'start-received': 'Skrip browser menerima perintah Rekam', 'iframe-start-sent': 'Sinyal diteruskan ke iframe', 'mouse-captured': 'Gerakan mouse tertangkap', 'iframe-event-relayed': 'Data iframe diterima browser utama', 'board-elements-not-found': 'Elemen kartu belum ditemukan di halaman game', 'board-cards-detected': 'Elemen kartu ditemukan untuk dibaca', 'board-snapshot-captured': 'Snapshot kondisi papan berhasil direkam' } as Record<string, string>)[stage] || stage}</small>) : <small>Menunggu sinyal diagnosis dari browser dan game...</small>}</span></div>}
  
       <div className="browser-shell">
         <div className="browser-chrome">

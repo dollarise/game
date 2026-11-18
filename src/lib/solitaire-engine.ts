@@ -2,6 +2,8 @@ export type BoardCard = {
   code: string;
   faceUp: boolean;
   slot: string;
+  /** Stable visual fingerprint when a face-up card's rank/suit is unavailable. */
+  visualId?: string;
 };
 
 export type BoardSnapshot = {
@@ -33,7 +35,8 @@ export function decodeBoardSnapshot(label?: string): BoardSnapshot | null {
       !!card && typeof card === 'object' &&
       typeof (card as BoardCard).code === 'string' &&
       typeof (card as BoardCard).slot === 'string' &&
-      typeof (card as BoardCard).faceUp === 'boolean'
+      typeof (card as BoardCard).faceUp === 'boolean' &&
+      ((card as BoardCard).visualId === undefined || typeof (card as BoardCard).visualId === 'string')
     );
     return cards.length ? { cards, signature: value.signature } : null;
   } catch {
@@ -45,14 +48,17 @@ function pileKey(slot: string): string {
   return slot.split(':').slice(0, 2).join(':');
 }
 
-function knownFaceUpCards(snapshot: BoardSnapshot): Map<string, string[]> {
-  const locations = new Map<string, string[]>();
+function knownFaceUpCards(snapshot: BoardSnapshot): Map<string, Array<{ slot: string; label: string }>> {
+  const locations = new Map<string, Array<{ slot: string; label: string }>>();
   for (const card of snapshot.cards) {
+    if (!card.faceUp) continue;
     const code = card.code.trim().toUpperCase();
-    if (!card.faceUp || UNKNOWN_CODES.has(code) || !isValidCardCode(code)) continue;
-    const slots = locations.get(code) || [];
-    slots.push(card.slot);
-    locations.set(code, slots);
+    const identity = isValidCardCode(code) ? 'card:' + code : (card.visualId ? 'visual:' + card.visualId : '');
+    // Hidden cards and cards without a stable visible identity remain unknown.
+    if (!identity) continue;
+    const entries = locations.get(identity) || [];
+    entries.push({ slot: card.slot, label: isValidCardCode(code) ? code : 'kartu belum terbaca' });
+    locations.set(identity, entries);
   }
   return locations;
 }
@@ -68,14 +74,14 @@ export function inferGameStep(
   const before = knownFaceUpCards(previous);
   const after = knownFaceUpCards(next);
 
-  const moved: Array<{ code: string; from: string; to: string }> = [];
-  for (const [code, oldSlots] of before) {
-    const newSlots = after.get(code);
-    // Duplicate DOM representations or ambiguous duplicate identities are
-    // not sufficient evidence for a reliable move.
-    if (oldSlots.length !== 1 || !newSlots || newSlots.length !== 1) continue;
-    if (pileKey(oldSlots[0]) !== pileKey(newSlots[0])) {
-      moved.push({ code, from: pileKey(oldSlots[0]), to: pileKey(newSlots[0]) });
+  const moved: Array<{ label: string; from: string; to: string }> = [];
+  for (const [identity, oldEntries] of before) {
+    const newEntries = after.get(identity);
+    // Duplicate DOM representations or ambiguous visual identities are not
+    // sufficient evidence for a reliable move.
+    if (oldEntries.length !== 1 || !newEntries || newEntries.length !== 1) continue;
+    if (pileKey(oldEntries[0].slot) !== pileKey(newEntries[0].slot)) {
+      moved.push({ label: oldEntries[0].label, from: pileKey(oldEntries[0].slot), to: pileKey(newEntries[0].slot) });
     }
   }
 
@@ -83,7 +89,7 @@ export function inferGameStep(
     const fromSlots = [...new Set(moved.map((item) => item.from))];
     const toSlots = [...new Set(moved.map((item) => item.to))];
     if (fromSlots.length !== 1 || toSlots.length !== 1) return null;
-    const cards = moved.map((item) => item.code);
+    const cards = moved.map((item) => item.label);
     return {
       kind: 'move',
       cards,
@@ -95,17 +101,41 @@ export function inferGameStep(
   }
 
   const newlyRevealed = next.cards.filter((card) => {
-    if (!card.faceUp || UNKNOWN_CODES.has(card.code.trim().toUpperCase())) return false;
-    return previous.cards.some((old) => old.slot === card.slot && !old.faceUp);
+    if (!card.faceUp) return false;
+    const known = isValidCardCode(card.code.trim().toUpperCase()) || Boolean(card.visualId);
+    return known && previous.cards.some((old) => old.slot === card.slot && !old.faceUp);
   });
   if (newlyRevealed.length === 1) {
     const card = newlyRevealed[0];
     return {
       kind: 'reveal',
-      cards: [card.code],
+      cards: [isValidCardCode(card.code.trim().toUpperCase()) ? card.code : 'kartu (identitas belum terbaca)'],
       from: card.slot,
       to: card.slot,
-      description: `Buka kartu ${card.code} pada posisi ${card.slot}`,
+      description: `Buka ${isValidCardCode(card.code.trim().toUpperCase()) ? 'kartu ' + card.code : 'kartu (identitas belum terbaca)'} pada posisi ${card.slot}`,
+      confidence: 'observed'
+    };
+  }
+
+  // A stock draw introduces a face-up card into the waste pile. It has no
+  // face-up identity in the previous snapshot, so ordinary move matching
+  // cannot see it; identify this transition from the structured API snapshots.
+  const newlyDrawn = [...after.entries()]
+    .filter(([identity, entries]) =>
+      !before.has(identity) &&
+      entries.length === 1 &&
+      entries[0].slot.startsWith('waste:open:')
+    )
+    .map(([, entries]) => entries[0].label);
+  if (newlyDrawn.length > 0) {
+    return {
+      kind: 'reveal',
+      cards: newlyDrawn,
+      from: 'stock:closed',
+      to: 'waste:open',
+      description: newlyDrawn.length === 1
+        ? `Ambil kartu ${newlyDrawn[0]} dari tumpukan kartu`
+        : `Ambil ${newlyDrawn.length} kartu dari tumpukan kartu: ${newlyDrawn.join(', ')}`,
       confidence: 'observed'
     };
   }

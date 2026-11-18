@@ -24,23 +24,29 @@ Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (Supabase publishable/anon 
 
 Enable the Email provider in Supabase Authentication and disable public sign-ups (Authentication → Settings → User Signups → turn off “Allow new users to sign up”). The Super Admin creates users manually from Authentication → Users using the Supabase dashboard. Add the local and deployed app URLs to Supabase Auth URL Configuration (Site URL and Redirect URLs) so password reset links can return to the app. Add the local and deployed app URLs to Supabase Auth URL Configuration (Site URL and Redirect URLs) so password reset links can return to the app.
 
-## Desktop application (Windows)
+## Desktop application — Electron migration preview
 
-The Windows desktop build uses Tauri 2 with the system Microsoft Edge WebView2 runtime. The Rekam panel is a native child WebView2 surface, so sites that block iframe embedding can still open inside the GAME desktop window. The Cloudflare Pages build remains the web version and uses an iframe, subject to the target site's frame policy.
+The desktop migration is in progress on branch `migration/electron-chromium`.
 
-Low-memory design:
+- The preview shell uses Electron `WebContentsView`, which runs the bundled Chromium engine.
+- The Electron main process and preload use context isolation, disabled Node integration, sandboxed browser contents, and an allowlisted IPC surface.
+- The preview installer uses a separate Windows app identity (`com.dollarise.game.electron-preview`) so it can be installed alongside the existing Tauri GAME application without replacing it.
+- Windows preview builds are produced by the `GAME Electron Preview — Windows Installer` workflow and uploaded as a GitHub Actions artifact.
+- Run the URL policy tests with `npm run test:desktop`.
 
-- The desktop shell uses the Windows WebView2 runtime instead of bundling a separate Chromium browser.
-- The target-site browser is created lazily and reuses one WebView instance.
-- The browser view is hidden when the user leaves Rekam or opens settings.
-- The installer downloads the small WebView2 bootstrapper only when the runtime is missing; it does not bundle a second browser runtime.
+**Not a release yet:** the existing React app and recording lifecycle still need full end-to-end verification. The Electron main process now injects the existing Solitaire mouse and board-snapshot recorder into Chromium frames, including cross-origin game frames, and relays events through the isolated preload. This port still needs live-site verification on Windows. Do not remove the existing Tauri application or use the preview as a replacement until the installer, browser, recording, pause/resume, stop/save, and Buka Data flows all pass Windows tests.
 
-To build on Windows with Rust and the Microsoft C++ Build Tools installed:
+### Electron preview development
 
 ```bash
 npm install
+npm run test:desktop
 npm run desktop:dev
-npm run desktop:build
 ```
 
-GitHub Actions also builds a Windows NSIS installer and uploads it as the `GAME-Windows-Installer` workflow artifact.
+Build the Windows preview installer on Windows:
+
+```bash
+npm run build
+npx electron-builder --win nsis
+```
