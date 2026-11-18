@@ -19,7 +19,7 @@ fn browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn browser_start_recording(app: AppHandle) -> Result<(), String> {
+fn browser_start_recording(app: AppHandle) -> Result<RecordingStartResult, String> {
     let view = browser_view(&app)?;
     let current = view.url().map_err(|error| error.to_string())?;
     let is_solitaire_page = current.scheme() == "https"
@@ -30,14 +30,19 @@ fn browser_start_recording(app: AppHandle) -> Result<(), String> {
     }
     // Report the native command path independently of the injected page script.
     // This distinguishes a toolbar/native bridge failure from a page-script failure.
-    app.emit("recording-diagnostic", RecordingDiagnostic { stage: "native-start-command".to_string() })
-        .map_err(|error| error.to_string())?;
+    let mut stages = vec!["native-start-command".to_string()];
+    let _ = app.emit("recording-diagnostic", RecordingDiagnostic { stage: "native-start-command".to_string() });
     // Recording state is controlled only by the GAME toolbar. This message
     // merely enables mouse-event capture inside the game frames.
-    view.eval("window.postMessage({ type: 'GAME_MANUAL_START_RECORDING' }, '*');")
-        .map_err(|error| error.to_string())?;
-    app.emit("recording-diagnostic", RecordingDiagnostic { stage: "start-message-sent".to_string() })
-        .map_err(|error| error.to_string())
+    let browser_error = match view.eval("window.postMessage({ type: 'GAME_MANUAL_START_RECORDING' }, '*');") {
+        Ok(()) => {
+            stages.push("start-message-sent".to_string());
+            let _ = app.emit("recording-diagnostic", RecordingDiagnostic { stage: "start-message-sent".to_string() });
+            None
+        }
+        Err(error) => Some(error.to_string()),
+    };
+    Ok(RecordingStartResult { stages, browser_error })
 }
 
 #[tauri::command]
@@ -86,6 +91,9 @@ struct RecordingInput {
 
 #[derive(Clone, serde::Serialize)]
 struct RecordingDiagnostic { stage: String }
+
+#[derive(serde::Serialize)]
+struct RecordingStartResult { stages: Vec<String>, browser_error: Option<String> }
 
 #[tauri::command]
 fn recording_diagnostic(webview: Webview, app: AppHandle, stage: String) -> Result<(), String> {
