@@ -32,6 +32,7 @@ jobs:
         run: |
           node --check electron/main.cjs
           node --check electron/preload.cjs
+          node -e "new (require('node:vm').Script)(require('./electron/capture-script.cjs'))"
 
       - name: Build GAME Electron Windows installer
         run: npm run desktop:build
