@@ -111,9 +111,9 @@
       root.getAttribute('data-card'), root.getAttribute('data-value'),
       root.getAttribute('data-rank'), root.getAttribute('data-suit'),
       root.getAttribute('aria-label'), root.getAttribute('title'),
-      root.getAttribute('alt'), root.getAttribute('src'), root.textContent,
+      root.getAttribute('alt'), root.getAttribute('src'), root.getAttribute('href'), root.getAttribute('xlink:href'), root.getAttribute('fill'), root.getAttribute('transform'), root.textContent,
       style.backgroundImage, style.backgroundPosition, style.backgroundSize,
-      ...descendants.flatMap((item) => [item.currentSrc, item.getAttribute('src'), item.getAttribute('data-src'), item.getAttribute('alt'), item.getAttribute('title'), item.getAttribute('data-rank'), item.getAttribute('data-suit')])
+      ...descendants.flatMap((item) => [item.currentSrc, item.getAttribute('src'), item.getAttribute('href'), item.getAttribute('xlink:href'), item.getAttribute('data-src'), item.getAttribute('alt'), item.getAttribute('title'), item.getAttribute('data-rank'), item.getAttribute('data-suit')])
     ].filter(Boolean).join('|').replace(/\s+/g, ' ').trim().slice(0, 1200);
     if (!parts || !/(?:https?:|data:image|url\(|data-card|data-rank|data-suit|\.(?:png|jpe?g|webp|svg)(?:[?#]|$))/i.test(parts)) return '';
     let hash = 2166136261;
@@ -135,25 +135,27 @@
   };
   const captureBoard = () => {
     if (!started) return;
-    const selector = '[data-card],[data-rank],[class*="card" i],[aria-label*="card" i],img[src*="card" i],img,[style*="background-image" i]';
-    const rawNodes = Array.from(document.querySelectorAll(selector)).filter((node) => node instanceof HTMLElement);
+    const selector = '[data-card],[data-rank],[class*="card" i],[aria-label*="card" i],img[src*="card" i],img,[style*="background-image" i],svg g,svg image,svg use,svg text,svg [aria-label]';
+    // SVGElement is not an HTMLElement. The previous filter silently discarded
+    // SVG-rendered playing cards, leaving mouse events but zero board snapshots.
+    const rawNodes = Array.from(document.querySelectorAll(selector)).filter((node) => node instanceof Element);
     const candidates = [];
     const seenElements = new Set();
     for (const node of rawNodes) {
       // Prefer the card wrapper so its child image is not counted as a second card.
-      const root = node.closest('[data-card],[class*="card" i],[aria-label*="card" i]') || node;
-      if (!(root instanceof HTMLElement) || seenElements.has(root)) continue;
+      const root = node.closest('[data-card],[class*="card" i],[aria-label*="card" i]') || node.closest('svg g') || node;
+      if (!(root instanceof Element) || seenElements.has(root)) continue;
       seenElements.add(root);
       const rect = root.getBoundingClientRect();
       if (rect.width < 12 || rect.height < 18 || rect.bottom < 0 || rect.right < 0 || rect.top > innerHeight || rect.left > innerWidth) continue;
-      const descendants = Array.from(root.querySelectorAll('img,[data-rank],[data-suit]'));
+      const descendants = Array.from(root.querySelectorAll('img,image,use,text,[data-rank],[data-suit]'));
       const raw = [
         root.getAttribute('aria-label'), root.getAttribute('title'), root.getAttribute('data-card'),
         root.getAttribute('data-value'), root.getAttribute('data-rank'), root.getAttribute('data-suit'),
-        root.getAttribute('alt'), root.getAttribute('src'), root.className, root.textContent,
+        root.getAttribute('alt'), root.getAttribute('src'), root.getAttribute('href'), root.getAttribute('xlink:href'), root.getAttribute('fill'), root.getAttribute('transform'), root.className, root.textContent,
         ...descendants.flatMap((item) => [
           item.getAttribute('aria-label'), item.getAttribute('alt'), item.getAttribute('title'),
-          item.getAttribute('src'), item.getAttribute('data-rank'), item.getAttribute('data-suit')
+          item.getAttribute('src'), item.getAttribute('href'), item.getAttribute('xlink:href'), item.getAttribute('data-rank'), item.getAttribute('data-suit')
         ])
       ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
       const code = cardCodeOf(raw);
@@ -161,7 +163,8 @@
       const visualId = visualIdentityOf(root, descendants);
       const cardLike = /card|playing|solitaire|rank|suit/i.test(raw);
       const ratio = rect.width / Math.max(1, rect.height);
-      const genericVisual = (node instanceof HTMLImageElement || /background-image/i.test(root.getAttribute('style') || '')) && rect.width >= 28 && rect.height >= 42 && ratio >= 0.48 && ratio <= 0.9;
+      const isSvgGraphic = root.namespaceURI === 'http://www.w3.org/2000/svg' && /^(g|image|use|svg)$/i.test(root.tagName);
+      const genericVisual = (node instanceof HTMLImageElement || isSvgGraphic || /background-image/i.test(root.getAttribute('style') || '')) && rect.width >= 28 && rect.height >= 42 && ratio >= 0.48 && ratio <= 0.9;
       if (!code && !faceDown && !cardLike && !genericVisual) continue;
       candidates.push({ root, rect, raw, visualId, code: faceDown ? 'BACK' : (code || 'UNKNOWN'), faceUp: !faceDown });
     }
