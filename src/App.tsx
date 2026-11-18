@@ -372,7 +372,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Rekam langkah dan kondisi Solitaire</span></div></div>
           <button className="settings-link" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={17}/> Pengaturan <ChevronDown size={15}/></button>
-          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.4.8</span></div>
+          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.5.0</span></div>
         </div>
       </aside>
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
@@ -422,7 +422,7 @@ function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Sessio
   const [error, setError] = useState('');
 
   async function adminAction(payload: Record<string, unknown>) {
-    const { data, error: invokeError } = await db.functions.desktopInvoke('game-user-admin', { body: payload });
+    const { data, error: invokeError } = await db.functions.invoke('game-user-admin', { body: payload });
     if (invokeError) throw new Error(invokeError.message);
     if (data?.error) throw new Error(data.error);
     return data;
