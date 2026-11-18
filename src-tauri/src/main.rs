@@ -28,9 +28,15 @@ fn browser_start_recording(app: AppHandle) -> Result<(), String> {
     if !is_solitaire_page {
         return Err("Perekaman hanya diizinkan pada halaman Solitaire yang ditentukan.".to_string());
     }
+    // Report the native command path independently of the injected page script.
+    // This distinguishes a toolbar/native bridge failure from a page-script failure.
+    app.emit("recording-diagnostic", RecordingDiagnostic { stage: "native-start-command".to_string() })
+        .map_err(|error| error.to_string())?;
     // Recording state is controlled only by the GAME toolbar. This message
     // merely enables mouse-event capture inside the game frames.
     view.eval("window.postMessage({ type: 'GAME_MANUAL_START_RECORDING' }, '*');")
+        .map_err(|error| error.to_string())?;
+    app.emit("recording-diagnostic", RecordingDiagnostic { stage: "start-message-sent".to_string() })
         .map_err(|error| error.to_string())
 }
 
@@ -84,7 +90,7 @@ struct RecordingDiagnostic { stage: String }
 #[tauri::command]
 fn recording_diagnostic(webview: Webview, app: AppHandle, stage: String) -> Result<(), String> {
     if webview.label() != "game-browser" { return Err("Diagnosis hanya diterima dari browser GAME.".to_string()); }
-    let allowed = ["start-received", "iframe-start-sent", "mouse-captured", "iframe-event-relayed"];
+    let allowed = ["native-start-command", "start-message-sent", "start-received", "iframe-start-sent", "mouse-captured", "iframe-event-relayed"];
     if !allowed.contains(&stage.as_str()) { return Err("Tahap diagnosis tidak dikenal.".to_string()); }
     app.emit("recording-diagnostic", RecordingDiagnostic { stage }).map_err(|error| error.to_string())
 }
