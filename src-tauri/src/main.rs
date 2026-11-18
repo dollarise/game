@@ -142,14 +142,37 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   let lastY = -10000;
   let dragStart = null;
   let suppressClickUntil = 0;
-  const send = (eventType, data = {}) => invoke('recording_event', {
-    eventType,
-    x: Number.isFinite(data.x) ? data.x : null,
-    y: Number.isFinite(data.y) ? data.y : null,
-    button: Number.isInteger(data.button) ? data.button : null,
-    pageUrl: location.href,
-    label: data.label || null
-  }).catch(() => undefined);
+  const isTopFrame = window.top === window;
+  const send = (eventType, data = {}) => {
+    const payload = {
+      eventType,
+      x: Number.isFinite(data.x) ? data.x : null,
+      y: Number.isFinite(data.y) ? data.y : null,
+      button: Number.isInteger(data.button) ? data.button : null,
+      pageUrl: location.href,
+      label: data.label || null
+    };
+    // Tauri's invoke bridge is not guaranteed to exist in cross-origin game
+    // iframes. Relay their captured input to the top-level GAME webview, where
+    // the native bridge is available, instead of silently dropping the event.
+    if (!isTopFrame) {
+      window.top.postMessage({ type: 'GAME_MOUSE_RECORDING_EVENT', payload }, '*');
+      return Promise.resolve();
+    }
+    return invoke('recording_event', payload).catch((error) => {
+      console.warn('[GAME recording] Native event delivery failed:', error);
+    });
+  };
+  if (isTopFrame) {
+    window.addEventListener('message', (event) => {
+      if (!started || !event.data || event.data.type !== 'GAME_MOUSE_RECORDING_EVENT') return;
+      const payload = event.data.payload;
+      if (!payload || !['move', 'click', 'board'].includes(payload.eventType)) return;
+      void invoke('recording_event', payload).catch((error) => {
+        console.warn('[GAME recording] Relayed event delivery failed:', error);
+      });
+    });
+  }
   const labelOf = (element) => {
     if (!(element instanceof Element)) return '';
     return [
