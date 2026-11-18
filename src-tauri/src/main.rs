@@ -294,16 +294,6 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       try { frame.contentWindow?.postMessage({ type: 'GAME_MANUAL_START_RECORDING' }, '*'); } catch (_) {}
     }
   });
-  document.addEventListener('pointerdown', (event) => {
-    if (started || !isStartControl(event.target)) return;
-    started = true;
-    startBoardObserver();
-    const control = event.target instanceof Element
-      ? event.target.closest('button,[role="button"],a,[tabindex]') || event.target
-      : null;
-    const label = control ? labelOf(control).slice(0, 120) : 'Play / Start Game';
-    void send('start', { x: event.clientX, y: event.clientY, button: event.button, label });
-  }, true);
   // Game buttons and their text have no control meaning in GAME.
   // While a session is active, capture only genuine mouse input as data.
   document.addEventListener('click', (event) => {
