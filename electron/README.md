@@ -1,9 +1,13 @@
 # Electron desktop migration — implementation notes
 
-This directory is the first isolated Electron shell layer for the GAME desktop migration.
+This directory contains the Electron desktop shell for the GAME migration.
 
-- `main.cjs` owns the BrowserWindow, Chromium WebContentsView, URL checks, and a narrow IPC allowlist.
-- `preload.cjs` exposes only the desktop operations and event subscriptions needed by the React UI.
-- `browser-preload.cjs` exposes a limited recording-event transport to the isolated game browser; it does not expose Node.js.
+- `main.cjs` owns the BrowserWindow, Chromium WebContentsView, URL validation, frame injection, and a narrow IPC allowlist.
+- `preload.cjs` exposes only the desktop operations and event subscriptions used by the React UI.
+- `browser-preload.cjs` relays approved mouse/board events from the game browser to the main process; it does not expose Node.js.
+- `browser-recorder.js` ports the existing Solitaire pointer, drag, and board-snapshot capture logic and is injected into each Chromium frame.
+- `security.cjs` centralizes URL validation and is covered by Node's built-in test runner.
 
-The existing React UI still imports Tauri APIs and the existing Windows workflow still builds Tauri. These files are therefore **not yet an installable migration** and must not be used as a release. The next integration work must replace the Tauri calls in `src/App.tsx`, port the recording script/event lifecycle, add Electron dependencies and NSIS packaging, update CI, then run Windows build and recording tests before release.
+The React UI now uses `src/lib/desktop.ts` instead of importing Tauri APIs. The Windows preview workflow packages the app as an Electron NSIS installer with a separate preview app identity, so it does not replace the existing Tauri installation.
+
+The preview is **not yet a release**. A real Windows build and live-site test are still required to verify Chromium navigation, cross-origin frame capture, pause/resume behavior, Stop/save, Supabase persistence, and reopening records in Buka Data. Keep the old Tauri installation until all those checks pass.
