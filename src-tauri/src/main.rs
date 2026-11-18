@@ -118,14 +118,12 @@ fn recording_event(
 
 const MOUSE_RECORDING_SCRIPT: &str = r#"
 (() => {
-  const topPath = (() => { try { return window.top.location.pathname; } catch (_) { return ''; } })();
-  const isGamePage = location.hostname === '1xlite-6487.com' && location.pathname.startsWith('/en/games/solitaire');
-  const isGameEmbed = (() => {
-    try { return new URL(document.referrer).hostname === '1xlite-6487.com'; }
-    catch (_) { return false; }
-  })();
-  if ((!isGamePage && !topPath.startsWith('/en/games/solitaire') && !isGameEmbed) ||
-      window.__GAME_MOUSE_RECORDING_INSTALLED__) return;
+  // This script is injected only into GAME's dedicated game-browser WebView.
+  // Install in every frame: cross-origin game frames may hide their referrer,
+  // so URL/referrer gating here can silently prevent the actual game frame
+  // from receiving mouse listeners. Native recording_event still validates
+  // the top-level Solitaire URL before accepting any event.
+  if (window.__GAME_MOUSE_RECORDING_INSTALLED__) return;
   // Install listeners even if the Tauri bridge is injected slightly later.
   // Manual start is delivered by postMessage; event transport is checked per call.
   window.__GAME_MOUSE_RECORDING_INSTALLED__ = true;
