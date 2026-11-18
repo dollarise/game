@@ -20,7 +20,7 @@ let captureMessageListenerAttached = false;
 let scriptIdentifier = null;
 const captureContextIds = new Map();
 
-const CAPTURE_SCRIPT = require('./capture-script.cjs');;
+const CAPTURE_SCRIPT = require('./capture-script.cjs');
 
 function sendToApp(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
