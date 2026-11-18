@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build",
+    "desktop:dev": "concurrently -k \"vite --host 127.0.0.1 --port 1420\" \"wait-on http://127.0.0.1:1420 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:1420 electron .\"",
+    "desktop:build": "npm run build && electron-builder --win nsis",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -24,6 +24,43 @@
     "@vitejs/plugin-react": "4.3.4",
     "typescript": "5.7.3",
     "vite": "6.0.7",
-    "@tauri-apps/cli": "^2.9.0"
+    "@tauri-apps/cli": "^2.9.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "45.3.4",
+    "electron-builder": "^26.0.12",
+    "wait-on": "^8.0.4"
+  },
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.dollarise.game.electron-preview",
+    "productName": "GAME Electron Preview",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "GAME-Electron-v${version}-Windows-Installer.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
