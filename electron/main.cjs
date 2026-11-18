@@ -28,7 +28,7 @@ const CAPTURE_SCRIPT = String.raw`(() => {
       node.textContent, node.getAttribute('aria-label'), node.getAttribute('title'),
       node.getAttribute('data-testid'), node.getAttribute('data-card'),
       node.getAttribute('data-rank'), node.getAttribute('data-suit'), node.getAttribute('alt')
-    ].filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim().slice(0, 180);
+    ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 180);
   };
   let lastMoveAt = 0;
   let lastBoardSignature = '';
@@ -43,8 +43,8 @@ const CAPTURE_SCRIPT = String.raw`(() => {
       seen.add(node);
       const raw = textOf(node);
       if (!raw) continue;
-      const rank = raw.match(/\\b(ace|king|queen|jack|10|[2-9]|[AJQK])\\b/i);
-      const suit = raw.match(/\\b(spades?|hearts?|diamonds?|clubs?)\\b|[♠♥♦♣]/i);
+      const rank = raw.match(/\b(ace|king|queen|jack|10|[2-9]|[AJQK])\b/i);
+      const suit = raw.match(/\b(spades?|hearts?|diamonds?|clubs?)\b|[♠♥♦♣]/i);
       const code = rank && suit ? ({ace:'A',king:'K',queen:'Q',jack:'J'}[rank[1].toLowerCase()] || rank[1]).toUpperCase() + ({spade:'S',heart:'H',diamond:'D',club:'C'}[String(suit[1]).toLowerCase().replace(/s$/,'')] || ({'♠':'S','♥':'H','♦':'D','♣':'C'}[suit[0]]) || '') : 'UNKNOWN';
       const rect = node.getBoundingClientRect();
       const slot = node.getAttribute('data-pile') || node.getAttribute('data-slot') ||
@@ -70,9 +70,9 @@ const CAPTURE_SCRIPT = String.raw`(() => {
     const buttonElement = target ? target.closest('button,[role="button"],[class*="button" i]') : null;
     const buttonLabel = buttonElement ? [
       buttonElement.textContent, buttonElement.getAttribute('aria-label'), buttonElement.getAttribute('title')
-    ].filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim() : '';
+    ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim() : '';
     const label = target ? textOf(target.closest('button,[role="button"],[data-card],[class*="card" i]') || target) : '';
-    if (/^(play(?:\\s+game)?|start(?:\\s+game)?|mulai(?:\\s+permainan)?)$/i.test(buttonLabel)) {
+    if (/^(play(?:\s+game)?|start(?:\s+game)?|mulai(?:\s+permainan)?)$/i.test(buttonLabel)) {
       emit({ type: 'auto-start', reason: 'play-start', x: event.clientX, y: event.clientY, label: buttonLabel, pageUrl: location.href });
     }
     drag = { x: event.clientX, y: event.clientY, label, moved: false };
@@ -96,7 +96,7 @@ const CAPTURE_SCRIPT = String.raw`(() => {
     if (!event.isTrusted) return;
     const target = event.target instanceof Element ? event.target : null;
     const label = target ? textOf(target.closest('button,[role="button"]') || target) : '';
-    if (/give\\s*up| menyerah| menyerah/i.test(label)) {
+    if (/give\s*up| menyerah| menyerah/i.test(label)) {
       emit({ type: 'auto-stop', status: 'incomplete', reason: 'give-up', pageUrl: location.href });
     }
     scheduleBoard();
