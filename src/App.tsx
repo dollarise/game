@@ -325,7 +325,6 @@ export default function App() {
     recordingSessionActive.current = false;
     setRecordingStatus('waiting');
     recordingEventsRef.current = [];
-    setRecordingEvents([]);
     setElapsedMs(0);
     accumulatedMs.current = 0;
     recordingStartedAt.current = null;
