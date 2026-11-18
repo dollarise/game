@@ -346,6 +346,8 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     void send('start', { x: event.clientX, y: event.clientY, button: event.button, label });
   }, true);
   document.addEventListener('click', (event) => {
+    // Only genuine user clicks may trigger game action signals.
+    if (!event.isTrusted) return;
     const target = event.target;
     const control = target instanceof Element ? target.closest('button,[role="button"],a,[tabindex]') : null;
     const cardLabel = cardLabelOf(target);
