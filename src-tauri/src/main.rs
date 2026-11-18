@@ -28,9 +28,8 @@ fn browser_start_recording(app: AppHandle) -> Result<(), String> {
     if !is_solitaire_page {
         return Err("Perekaman hanya diizinkan pada halaman Solitaire yang ditentukan.".to_string());
     }
-    // Start the React recording session directly; do not depend on the
-    // page's injected Tauri bridge to deliver the initial state transition.
-    app.emit("recording-auto-start", ()).map_err(|error| error.to_string())?;
+    // Recording state is controlled only by the GAME toolbar. This message
+    // merely enables mouse-event capture inside the game frames.
     view.eval("window.postMessage({ type: 'GAME_MANUAL_START_RECORDING' }, '*');")
         .map_err(|error| error.to_string())
 }
@@ -103,14 +102,9 @@ fn recording_event(
         return Err("Perekaman hanya diizinkan pada halaman Solitaire yang ditentukan.".to_string());
     }
     let _ = page_url;
+    // Game-page controls/text must never start, pause, complete, or stop a
+    // recording. Only raw mouse/board data is accepted from the game webview.
     match event_type.as_str() {
-        "start" => app.emit("recording-auto-start", ()).map_err(|error| error.to_string()),
-        "give_up" => app.emit("recording-auto-stop", ()).map_err(|error| error.to_string()),
-        "auto_build" => {
-            app.emit("recording-input", RecordingInput { kind: "click".to_string(), x, y, button, label })
-                .map_err(|error| error.to_string())?;
-            app.emit("recording-auto-complete", ()).map_err(|error| error.to_string())
-        },
         "move" | "click" | "board" => app.emit("recording-input", RecordingInput {
             kind: event_type.clone(),
             x,
@@ -118,7 +112,7 @@ fn recording_event(
             button,
             label,
         }).map_err(|error| error.to_string()),
-        _ => Err("Jenis aktivitas rekaman tidak dikenal.".to_string()),
+        _ => Err("Perintah kontrol rekaman dari halaman game dinonaktifkan.".to_string()),
     }
 }
 
@@ -178,33 +172,6 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const description = labelOf(card);
     const match = description.match(/(?:^|\b)(ace|king|queen|jack|10|[2-9]|[AJQK])\s*(?:of\s*)?(spades?|hearts?|diamonds?|clubs?|♠|♥|♦|♣)(?:\b|$)/i);
     return match ? 'kartu ' + match[0].trim() : 'kartu (identitas belum terbaca)';
-  };
-  const isStartControl = (target) => {
-    if (!(target instanceof Element)) return false;
-    // The game uses nested div/SVG controls in some layouts. Inspect the
-    // clicked element and several ancestors instead of relying on button tags.
-    let node = target;
-    for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement) {
-      const description = [
-        labelOf(node),
-        labelOf(node.querySelector && node.querySelector('svg')),
-        labelOf(node.querySelector && node.querySelector('img'))
-      ].join(' ').toLowerCase();
-      if (/(^|[^a-z])(play|start|new\\s*game|play\\s*now|deal)([^a-z]|$)/i.test(description)) return true;
-    }
-    return false;
-  };
-  // Terminal actions must use a human-readable label, not CSS classes or SVG metadata.
-  const actionControlText = (control) => [
-    control && control.textContent,
-    control && control.getAttribute('aria-label'),
-    control && control.getAttribute('title')
-  ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().toLowerCase();
-  const isAutoBuildControl = (target) => {
-    if (!(target instanceof Element)) return false;
-    const control = target.closest('button,[role="button"],a,[tabindex]');
-    if (!control) return false;
-    return /\bauto\s*build\b/.test(actionControlText(control));
   };
   let lastBoardSignature = '';
   let boardCaptureTimer = 0;
@@ -315,7 +282,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     if (boardCaptureTimer) window.clearTimeout(boardCaptureTimer);
     boardCaptureTimer = window.setTimeout(() => { boardCaptureTimer = 0; captureBoard(); }, delay);
   };
-  // Manual fallback from the GAME toolbar, relayed into nested game frames.
+  // Start capture only when the user presses Rekam in the GAME toolbar.
   window.addEventListener('message', (event) => {
     if (!event.data || event.data.type !== 'GAME_MANUAL_START_RECORDING') return;
     if (!started) {
@@ -327,14 +294,6 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       try { frame.contentWindow?.postMessage({ type: 'GAME_MANUAL_START_RECORDING' }, '*'); } catch (_) {}
     }
   });
-  const isGiveUpControl = (target) => {
-    if (!(target instanceof Element)) return false;
-    const control = target.closest('button,[role="button"],a,[tabindex]');
-    if (!control) return false;
-    return /\bgive\s*up\b|\babandon\b/.test(actionControlText(control));
-  };
-  // Detect the launch action on pointer press as well as click. This starts
-  // the session even when the embedded game's UI suppresses its click event.
   document.addEventListener('pointerdown', (event) => {
     if (started || !isStartControl(event.target)) return;
     started = true;
@@ -345,57 +304,16 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     const label = control ? labelOf(control).slice(0, 120) : 'Play / Start Game';
     void send('start', { x: event.clientX, y: event.clientY, button: event.button, label });
   }, true);
+  // Game buttons and their text have no control meaning in GAME.
+  // While a session is active, capture only genuine mouse input as data.
   document.addEventListener('click', (event) => {
-    // Only genuine user clicks may trigger game action signals.
-    if (!event.isTrusted) return;
-    const target = event.target;
-    const control = target instanceof Element ? target.closest('button,[role="button"],a,[tabindex]') : null;
-    const cardLabel = cardLabelOf(target);
-    const label = cardLabel ? 'Klik ' + cardLabel : control ? labelOf(control).slice(0, 120) : 'Klik area permainan';
-    if (isStartControl(target)) {
-      if (!started) {
-        started = true;
-        startBoardObserver();
-        void send('start', { x: event.clientX, y: event.clientY, button: event.button, label })
-          .then(() => send('click', { x: event.clientX, y: event.clientY, button: event.button, label }))
-          .then(() => scheduleBoardCapture(650));
-      } else {
-        void send('click', { x: event.clientX, y: event.clientY, button: event.button, label })
-          .then(() => scheduleBoardCapture(650));
-      }
-      return;
-    }
+    if (!started || !event.isTrusted) return;
+    const cardLabel = cardLabelOf(event.target);
+    const label = cardLabel ? 'Klik ' + cardLabel : 'Klik area permainan';
     const input = { x: event.clientX, y: event.clientY, button: event.button, label };
-    // Give up may be clicked inside a separate game iframe, whose local
-    // recording flag was never set by the frame that detected Play/Start.
-    // Detect this explicit button click independently of that local flag.
-    if (isAutoBuildControl(target)) {
-      // Auto Build can change the final board immediately. Capture and deliver
-      // that final snapshot before notifying the UI to save/stop the session.
-      if (started) {
-        void send('click', input)
-          .then(() => new Promise((resolve) => window.setTimeout(resolve, 350)))
-          .then(() => captureBoard())
-          .then(() => {
-            started = false;
-            stopBoardObserver();
-            return send('auto_build', input);
-          });
-      }
-      return;
+    if (Date.now() >= suppressClickUntil) {
+      void send('click', input).then(() => scheduleBoardCapture(350));
     }
-    if (isGiveUpControl(target)) {
-      // Only the frame that started recording may end it, after an explicit
-      // click on a visibly labeled Give Up / Abandon control.
-      if (started) {
-        void send('click', input);
-        started = false;
-        stopBoardObserver();
-        void send('give_up', input);
-      }
-      return;
-    }
-    if (started && Date.now() >= suppressClickUntil) void send('click', input).then(() => scheduleBoardCapture(350));
   }, true);
   document.addEventListener('pointerdown', (event) => {
     if (!started) return;
