@@ -98,7 +98,7 @@ struct RecordingStartResult { stages: Vec<String>, browser_error: Option<String>
 #[tauri::command]
 fn recording_diagnostic(webview: Webview, app: AppHandle, stage: String) -> Result<(), String> {
     if webview.label() != "game-browser" { return Err("Diagnosis hanya diterima dari browser GAME.".to_string()); }
-    let allowed = ["native-start-command", "start-message-sent", "start-received", "iframe-start-sent", "mouse-captured", "iframe-event-relayed"];
+    let allowed = ["native-start-command", "start-message-sent", "start-received", "iframe-start-sent", "mouse-captured", "iframe-event-relayed", "solitaire-canvas-found", "game-table-found", "game-columns-found", "game-cards-found", "game-cards-unreadable"];
     if !allowed.contains(&stage.as_str()) { return Err("Tahap diagnosis tidak dikenal.".to_string()); }
     app.emit("recording-diagnostic", RecordingDiagnostic { stage }).map_err(|error| error.to_string())
 }
