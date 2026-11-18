@@ -194,12 +194,17 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     }
     return false;
   };
+  // Terminal actions must use a human-readable label, not CSS classes or SVG metadata.
+  const actionControlText = (control) => [
+    control && control.textContent,
+    control && control.getAttribute('aria-label'),
+    control && control.getAttribute('title')
+  ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().toLowerCase();
   const isAutoBuildControl = (target) => {
     if (!(target instanceof Element)) return false;
     const control = target.closest('button,[role="button"],a,[tabindex]');
     if (!control) return false;
-    const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg')) + ' ' + labelOf(control.querySelector('img'))).toLowerCase();
-    return /\bauto\s*build\b/.test(description);
+    return /\bauto\s*build\b/.test(actionControlText(control));
   };
   let lastBoardSignature = '';
   let boardCaptureTimer = 0;
@@ -326,8 +331,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     if (!(target instanceof Element)) return false;
     const control = target.closest('button,[role="button"],a,[tabindex]');
     if (!control) return false;
-    const description = (labelOf(control) + ' ' + labelOf(control.querySelector('svg')) + ' ' + labelOf(control.querySelector('img'))).toLowerCase();
-    return /\bgive\s*up\b|\babandon\b/.test(description);
+    return /\bgive\s*up\b|\babandon\b/.test(actionControlText(control));
   };
   // Detect the launch action on pointer press as well as click. This starts
   // the session even when the embedded game's UI suppresses its click event.
@@ -375,16 +379,18 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
             stopBoardObserver();
             return send('auto_build', input);
           });
-      } else {
-        void send('auto_build', input);
       }
       return;
     }
     if (isGiveUpControl(target)) {
-      if (started) void send('click', input);
-      started = false;
-      stopBoardObserver();
-      void send('give_up', input);
+      // Only the frame that started recording may end it, after an explicit
+      // click on a visibly labeled Give Up / Abandon control.
+      if (started) {
+        void send('click', input);
+        started = false;
+        stopBoardObserver();
+        void send('give_up', input);
+      }
       return;
     }
     if (started && Date.now() >= suppressClickUntil) void send('click', input).then(() => scheduleBoardCapture(350));
