@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "GAME V1.2.1",
+  "productName": "GAME",
   "version": "1.2.1",
   "identifier": "com.dollarise.game",
   "build": {
