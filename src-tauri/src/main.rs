@@ -303,6 +303,33 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     if (boardCaptureTimer) window.clearTimeout(boardCaptureTimer);
     boardCaptureTimer = window.setTimeout(() => { boardCaptureTimer = 0; captureBoard(); }, delay);
   };
+  // Forward the manual start signal to current and future nested frames.
+  // Solitaire can create or reload its cross-origin game iframe after the
+  // toolbar starts recording, so a one-time scan is not sufficient.
+  let frameStartObserver = null;
+  const startMessage = { type: 'GAME_MANUAL_START_RECORDING' };
+  const notifyFrameStarted = (frame) => {
+    if (!(frame instanceof HTMLIFrameElement)) return;
+    const notify = () => {
+      try { frame.contentWindow?.postMessage(startMessage, '*'); } catch (_) {}
+    };
+    frame.addEventListener('load', notify);
+    notify();
+  };
+  const observeAndStartFrames = () => {
+    for (const frame of Array.from(document.querySelectorAll('iframe'))) notifyFrameStarted(frame);
+    if (frameStartObserver || !document.documentElement) return;
+    frameStartObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of Array.from(mutation.addedNodes)) {
+          if (!(node instanceof Element)) continue;
+          if (node instanceof HTMLIFrameElement) notifyFrameStarted(node);
+          for (const frame of Array.from(node.querySelectorAll('iframe'))) notifyFrameStarted(frame);
+        }
+      }
+    });
+    frameStartObserver.observe(document.documentElement, { childList: true, subtree: true });
+  };
   // Start capture only when the user presses Rekam in the GAME toolbar.
   window.addEventListener('message', (event) => {
     if (!event.data || event.data.type !== 'GAME_MANUAL_START_RECORDING') return;
@@ -311,9 +338,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       startBoardObserver();
       scheduleBoardCapture(350);
     }
-    for (const frame of Array.from(document.querySelectorAll('iframe'))) {
-      try { frame.contentWindow?.postMessage({ type: 'GAME_MANUAL_START_RECORDING' }, '*'); } catch (_) {}
-    }
+    observeAndStartFrames();
   });
   // Game buttons and their text have no control meaning in GAME.
   // While a session is active, capture only genuine mouse input as data.
