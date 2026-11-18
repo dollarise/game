@@ -60,6 +60,7 @@ export default function App() {
   const [recordingStatus, setRecordingStatus] = useState<'waiting' | 'recording' | 'paused'>('waiting');
   const [startingRecording, setStartingRecording] = useState(false);
   const [recordingEvents, setRecordingEvents] = useState<MouseEventData[]>([]);
+  const [recordingDiagnostics, setRecordingDiagnostics] = useState<string[]>([]);
   const recordingEventsRef = useRef<MouseEventData[]>([]);
   const recordingSaveStatusRef = useRef<'completed' | 'incomplete'>('completed');
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -111,6 +112,7 @@ export default function App() {
   }, [recordingStatus]);
 
   function beginRecordingSession(message: string) {
+    setRecordingDiagnostics([]);
     if (recordingSessionActive.current) {
       setRecordingStatus('recording');
       return;
@@ -128,6 +130,15 @@ export default function App() {
     setSection('browser');
     ping(message);
   }
+
+  useEffect(() => {
+    let active = true;
+    let unlistenDiagnostic: (() => void) | undefined;
+    void listen<{ stage: string }>('recording-diagnostic', (event) => {
+      if (active) setRecordingDiagnostics((items) => [...items, event.payload.stage].slice(-8));
+    }).then((stop) => { if (active) unlistenDiagnostic = stop; else stop(); });
+    return () => { active = false; unlistenDiagnostic?.(); };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -363,7 +374,7 @@ export default function App() {
           {section === 'browser' ? (
             <BrowserFrame url={targetUrl} onNavigate={navigateTarget} suspend={settingsOpen}
               recordingStatus={recordingStatus} elapsedMs={elapsedMs} eventCount={recordingEvents.length}
-              savingRecord={savingRecord} startingRecording={startingRecording} onStart={() => void startManualRecording()} onPause={pauseRecording} onResume={resumeRecording} onStop={() => void stopRecording()} />
+              savingRecord={savingRecord} startingRecording={startingRecording} diagnostics={recordingDiagnostics} onStart={() => void startManualRecording()} onPause={pauseRecording} onResume={resumeRecording} onStop={() => void stopRecording()} />
           ) : section === 'data' ? (
             <>
               <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Riwayat kondisi papan, langkah permainan, dan aktivitas mouse Solitaire.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Kembali ke Rekam</button></div>
@@ -463,9 +474,9 @@ function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Sessio
   </section>;
 }
 
-function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, eventCount, savingRecord, startingRecording, onStart, onPause, onResume, onStop }: {
+function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, eventCount, savingRecord, startingRecording, diagnostics, onStart, onPause, onResume, onStop }: {
   url: string; onNavigate: (url: string) => void; suspend: boolean;
-  recordingStatus: 'waiting' | 'recording' | 'paused'; elapsedMs: number; eventCount: number; savingRecord: boolean; startingRecording: boolean; onStart: () => void;
+  recordingStatus: 'waiting' | 'recording' | 'paused'; elapsedMs: number; eventCount: number; savingRecord: boolean; startingRecording: boolean; diagnostics: string[]; onStart: () => void;
   onPause: () => void; onResume: () => void; onStop: () => void;
 }) {
   const desktop = isTauri();
@@ -562,6 +573,7 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
           {recordingStatus !== 'waiting' && <button className="button button-danger" onClick={onStop} disabled={savingRecord}>{savingRecord ? <LoaderCircle className="spin" size={15}/> : <Square size={14}/>} {savingRecord ? 'Menyimpan...' : 'Stop'}</button>}
         </div>
       </div>
+      {recordingStatus !== 'waiting' && diagnostics.length > 0 && <div className="recording-diagnostics" aria-live="polite"><b>Diagnosis Rekaman</b><span>{diagnostics.map((stage, index) => <small key={index}>{({ 'start-received': 'Sinyal Rekam diterima', 'iframe-start-sent': 'Sinyal diteruskan ke iframe', 'mouse-captured': 'Gerakan mouse tertangkap', 'iframe-event-relayed': 'Data iframe diterima browser utama' } as Record<string, string>)[stage] || stage}</small>)}</span></div>}
  
       <div className="browser-shell">
         <div className="browser-chrome">
