@@ -105,6 +105,13 @@ function registerIpc() {
     return { stages: ['native-start-command', 'start-message-sent'], browser_error: null };
   });
 
+  ipcMain.on('browser:recording-diagnostic', (event, stage) => {
+    if (event.sender !== browserView.webContents) return;
+    const allowed = ['start-received', 'mouse-captured'];
+    if (!allowed.includes(stage)) return;
+    sendToUi('recording:diagnostic', { stage });
+  });
+
   ipcMain.on('browser:recording-event', (event, payload) => {
     if (event.sender !== browserView.webContents) return;
     try {
