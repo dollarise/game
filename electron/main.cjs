@@ -9,6 +9,7 @@ let mainWindow;
 let gameView;
 let recordingActive = false;
 let cdpAttached = false;
+let captureInstalled = false;
 let scriptIdentifier = null;
 
 const CAPTURE_SCRIPT = String.raw\`(() => {
@@ -121,6 +122,7 @@ function isAllowedRecordingPage(value) {
 function attachCapture() {
   if (!gameView || gameView.webContents.isDestroyed()) throw new Error('Browser internal belum siap.');
   const wc = gameView.webContents;
+  if (captureInstalled && wc.debugger.isAttached()) return Promise.resolve();
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
   cdpAttached = true;
   wc.debugger.on('message', (_event, method, params) => {
@@ -148,6 +150,7 @@ function attachCapture() {
     .then(() => wc.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: CAPTURE_SCRIPT }))
     .then(async (result) => {
       scriptIdentifier = result.identifier;
+      captureInstalled = true;
       const tree = await wc.debugger.sendCommand('Page.getFrameTree');
       const frames = [];
       const walk = (node) => {
@@ -212,6 +215,7 @@ function createWindow() {
   mainWindow.on('closed', () => {
     recordingActive = false;
     if (gameView && !gameView.webContents.isDestroyed()) gameView.webContents.close();
+    captureInstalled = false;
     gameView = null;
     mainWindow = null;
   });
