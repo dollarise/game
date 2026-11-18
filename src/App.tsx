@@ -261,15 +261,10 @@ export default function App() {
     try {
       await invoke('browser_start_recording');
     } catch (error) {
-      // Roll back the session if the native browser rejected the start request.
-      recordingSessionActive.current = false;
-      recordingStartedAt.current = null;
-      accumulatedMs.current = 0;
-      recordingEventsRef.current = [];
-      setRecordingEvents([]);
-      setRecordingStatus('waiting');
-      setElapsedMs(0);
-      ping('Browser gagal memulai perekaman: ' + String(error));
+      // Keep the app-owned session and timer alive. A WebView bridge failure
+      // must not silently cancel a session the user explicitly started.
+      // Surface the capture error so it can be diagnosed without losing time.
+      ping('Sesi rekaman tetap berjalan, tetapi koneksi perekam mouse gagal: ' + String(error));
     } finally {
       setStartingRecording(false);
     }
@@ -361,7 +356,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Rekam langkah dan kondisi Solitaire</span></div></div>
           <button className="settings-link" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={17}/> Pengaturan <ChevronDown size={15}/></button>
-          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.3.8</span></div>
+          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.3.9</span></div>
         </div>
       </aside>
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
