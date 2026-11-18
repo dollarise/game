@@ -12,7 +12,7 @@ window.addEventListener('message', (event) => {
   if (message.type === 'GAME_ELECTRON_RECORDING_DIAGNOSTIC_TO_NATIVE' &&
       ['native-start-command', 'start-message-sent', 'start-received', 'iframe-start-sent',
        'mouse-captured', 'iframe-event-relayed', 'board-elements-not-found',
-       'board-cards-detected', 'board-snapshot-captured'].includes(message.stage)) {
+       'board-cards-detected', 'board-snapshot-captured', 'game-api-board-captured'].includes(message.stage)) {
     ipcRenderer.send('browser:recording-diagnostic', message.stage);
     return;
   }
