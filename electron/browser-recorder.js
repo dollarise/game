@@ -140,7 +140,8 @@
     const candidates = [];
     const seenElements = new Set();
     for (const node of rawNodes) {
-      const root = node instanceof HTMLImageElement ? node : (node.closest('[data-card],[class*="card" i],[aria-label*="card" i]') || node);
+      // Prefer the card wrapper so its child image is not counted as a second card.
+      const root = node.closest('[data-card],[class*="card" i],[aria-label*="card" i]') || node;
       if (!(root instanceof HTMLElement) || seenElements.has(root)) continue;
       seenElements.add(root);
       const rect = root.getBoundingClientRect();
