@@ -227,7 +227,7 @@ function createWindow() {
   gameView.webContents.on('did-navigate', (_event, url) => handleBrowserNavigation(url));
   gameView.webContents.on('did-navigate-in-page', (_event, url) => handleBrowserNavigation(url));
   gameView.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\\/\\//i.test(url)) {
+    if (/^https?:\/\//i.test(url)) {
       void gameView.webContents.loadURL(url);
     }
     return { action: 'deny' };
