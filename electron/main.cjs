@@ -96,7 +96,7 @@ const CAPTURE_SCRIPT = String.raw`(() => {
   document.addEventListener('click', (event) => {
     if (!event.isTrusted) return;
     const target = event.target instanceof Element ? event.target : null;
-    const label = target ? textOf(target.closest('button,[role="button"]') || target) : '';
+    const label = target ? textOf(target.closest('button,[role="button"],[class*="button" i]') || target) : '';
     if (/give\s*up| menyerah| menyerah/i.test(label)) {
       emit({ type: 'auto-stop', status: 'incomplete', reason: 'give-up', pageUrl: location.href });
     }
