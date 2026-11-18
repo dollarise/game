@@ -131,12 +131,7 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    let unlistenStart: (() => void) | undefined;
     let unlistenInput: (() => void) | undefined;
-    void listen('recording-auto-start', () => {
-      if (!active) return;
-      beginRecordingSession('Permainan dimulai. Rekaman mouse otomatis berjalan.');
-    }).then((stop) => { if (active) unlistenStart = stop; else stop(); });
     void listen<Omit<MouseEventData, 'elapsed_ms'> & { type: 'move' | 'click' | 'board' }>('recording-input', async (event) => {
       if (!active || recordingStartedAt.current === null) return;
       const elapsed = accumulatedMs.current + Date.now() - recordingStartedAt.current;
@@ -369,7 +364,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Rekam langkah dan kondisi Solitaire</span></div></div>
           <button className="settings-link" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={17}/> Pengaturan <ChevronDown size={15}/></button>
-          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.3.7</span></div>
+          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.3.8</span></div>
         </div>
       </aside>
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
@@ -573,7 +568,7 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
   return (
     <section className="browser-workspace">
       <div className="recording-toolbar">
-        <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Menunggu Play / Start Game' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Klik tombol Play di dalam Solitaire untuk mulai otomatis' : eventCount.toLocaleString('id-ID') + ' aktivitas mouse terekam'}</span></div></div>
+        <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Siap Merekam' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Tekan Rekam di aplikasi untuk memulai sesi' : eventCount.toLocaleString('id-ID') + ' aktivitas mouse terekam'}</span></div></div>
         <div className="recording-actions">
           {recordingStatus === 'waiting' && <button className="button button-primary" onClick={onStart} disabled={startingRecording}><Play size={15}/> {startingRecording ? 'Memulai...' : 'Rekam'}</button>}
           {recordingStatus === 'recording' && <button className="button button-secondary" onClick={onPause}><Pause size={15}/> Jeda</button>}
