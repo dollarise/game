@@ -288,7 +288,12 @@
     if (!started || event.button !== 0 || !dragStart) return;
     const source = dragStart;
     dragStart = null;
-    if (Math.hypot(event.clientX - source.x, event.clientY - source.y) < 7) return;
+    if (Math.hypot(event.clientX - source.x, event.clientY - source.y) < 7) {
+      // Stock draws, single-card taps, and automatic reveals may not produce
+      // a useful DOM mutation. Always compare the board after a click as well.
+      window.setTimeout(captureBoard, 420);
+      return;
+    }
     const destination = cardLabelOf(event.target) || 'posisi tujuan';
     suppressClickUntil = Date.now() + 800;
     const label = 'Pindahkan ' + (source.card || 'kartu/objek') + ' ke ' + destination;
