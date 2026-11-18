@@ -51,7 +51,7 @@ jobs:
         run: npm run build
 
       - name: Build Electron NSIS installer
-        run: npx electron-builder --win nsis
+        run: npx electron-builder --win nsis --publish never
 
       - name: Upload Electron preview installer
         uses: actions/upload-artifact@v4
