@@ -102,6 +102,21 @@
     boardObserver = null;
     lastBoardSignature = '';
   };
+  const visualIdentityOf = (root, descendants) => {
+    const style = getComputedStyle(root);
+    const parts = [
+      root.getAttribute('data-card'), root.getAttribute('data-value'),
+      root.getAttribute('data-rank'), root.getAttribute('data-suit'),
+      root.getAttribute('aria-label'), root.getAttribute('title'),
+      root.getAttribute('alt'), root.getAttribute('src'), root.textContent,
+      style.backgroundImage, style.backgroundPosition, style.backgroundSize,
+      ...descendants.flatMap((item) => [item.currentSrc, item.getAttribute('src'), item.getAttribute('data-src'), item.getAttribute('alt'), item.getAttribute('title'), item.getAttribute('data-rank'), item.getAttribute('data-suit')])
+    ].filter(Boolean).join('|').replace(/\\s+/g, ' ').trim().slice(0, 1200);
+    if (!parts || !/(?:https?:|data:image|url\\(|data-card|data-rank|data-suit)/i.test(parts)) return '';
+    let hash = 2166136261;
+    for (let index = 0; index < parts.length; index += 1) { hash ^= parts.charCodeAt(index); hash = Math.imul(hash, 16777619); }
+    return 'visual-' + (hash >>> 0).toString(16);
+  };
   const cardCodeOf = (raw) => {
     const text = String(raw || '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
     const long = text.match(/\b(ace|king|queen|jack|10|[2-9]|[AJQK])\s*(?:of\s*)?(spades?|hearts?|diamonds?|clubs?|♠|♥|♦|♣)\b/i);
@@ -117,12 +132,12 @@
   };
   const captureBoard = () => {
     if (!started) return;
-    const selector = '[data-card],[data-rank],[class*="card" i],[aria-label*="card" i],img[src*="card" i]';
+    const selector = '[data-card],[data-rank],[class*="card" i],[aria-label*="card" i],img[src*="card" i],img,[style*="background-image" i]';
     const rawNodes = Array.from(document.querySelectorAll(selector)).filter((node) => node instanceof HTMLElement);
     const candidates = [];
     const seenElements = new Set();
     for (const node of rawNodes) {
-      const root = node.closest('[data-card],[class*="card" i],[aria-label*="card" i]') || node;
+      const root = node instanceof HTMLImageElement ? node : (node.closest('[data-card],[class*="card" i],[aria-label*="card" i]') || node);
       if (!(root instanceof HTMLElement) || seenElements.has(root)) continue;
       seenElements.add(root);
       const rect = root.getBoundingClientRect();
@@ -139,8 +154,12 @@
       ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
       const code = cardCodeOf(raw);
       const faceDown = /back|covered|hidden|face[\s_-]*down|card[\s_-]*back/i.test(raw);
-      if (!code && !faceDown && !/card/i.test(raw)) continue;
-      candidates.push({ root, rect, raw, code: faceDown ? 'BACK' : (code || 'UNKNOWN'), faceUp: !faceDown });
+      const visualId = visualIdentityOf(root, descendants);
+      const cardLike = /card|playing|solitaire|rank|suit/i.test(raw);
+      const ratio = rect.width / Math.max(1, rect.height);
+      const genericVisual = (node instanceof HTMLImageElement || /background-image/i.test(root.getAttribute('style') || '')) && rect.width >= 28 && rect.height >= 42 && ratio >= 0.48 && ratio <= 0.9;
+      if (!code && !faceDown && !cardLike && !genericVisual) continue;
+      candidates.push({ root, rect, raw, visualId, code: faceDown ? 'BACK' : (code || 'UNKNOWN'), faceUp: !faceDown });
     }
     if (!candidates.length) return;
 
@@ -185,11 +204,11 @@
         }).sort((a, b) => a.rect.top - b.rect.top);
         const stackIndex = pileItems.indexOf(item);
         const slot = zone + ':' + String(pileIndex + 1).padStart(2, '0') + ':' + String(stackIndex + 1).padStart(2, '0');
-        cards.push({ code: item.faceUp ? item.code : 'BACK', faceUp: item.faceUp, slot });
+        cards.push({ code: item.faceUp ? item.code : 'BACK', faceUp: item.faceUp, slot, ...(item.faceUp && item.visualId ? { visualId: item.visualId } : {}) });
       }
     }
     cards.sort((a, b) => a.slot.localeCompare(b.slot) || a.code.localeCompare(b.code));
-    const signature = cards.map((card) => card.slot + '=' + card.code + (card.faceUp ? ':UP' : ':DOWN')).join('|');
+    const signature = cards.map((card) => card.slot + '=' + card.code + (card.faceUp ? ':' + (card.visualId || 'UP') : ':DOWN')).join('|');
     if (!signature || signature === lastBoardSignature) return;
     lastBoardSignature = signature;
     return send('board', { label: JSON.stringify({ cards, signature }) });
