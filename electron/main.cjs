@@ -67,7 +67,14 @@ const CAPTURE_SCRIPT = String.raw`(() => {
   document.addEventListener('pointerdown', (event) => {
     if (!event.isTrusted || event.button !== 0) return;
     const target = event.target instanceof Element ? event.target : null;
+    const buttonElement = target ? target.closest('button,[role="button"],[class*="button" i]') : null;
+    const buttonLabel = buttonElement ? [
+      buttonElement.textContent, buttonElement.getAttribute('aria-label'), buttonElement.getAttribute('title')
+    ].filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim() : '';
     const label = target ? textOf(target.closest('button,[role="button"],[data-card],[class*="card" i]') || target) : '';
+    if (/^(play(?:\\s+game)?|start(?:\\s+game)?|mulai(?:\\s+permainan)?)$/i.test(buttonLabel)) {
+      emit({ type: 'auto-start', reason: 'play-start', x: event.clientX, y: event.clientY, label: buttonLabel, pageUrl: location.href });
+    }
     drag = { x: event.clientX, y: event.clientY, label, moved: false };
     emit({ type: 'click', x: event.clientX, y: event.clientY, button: event.button, label, pageUrl: location.href });
   }, true);
@@ -126,10 +133,18 @@ function attachCapture() {
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
   cdpAttached = true;
   wc.debugger.on('message', (_event, method, params) => {
-    if (method !== 'Runtime.bindingCalled' || params.name !== '__GAME_CAPTURE' || !recordingActive || !isAllowedRecordingPage(gameView?.webContents.getURL() || '')) return;
+    if (method !== 'Runtime.bindingCalled' || params.name !== '__GAME_CAPTURE' || !isAllowedRecordingPage(gameView?.webContents.getURL() || '')) return;
     let payload;
     try { payload = JSON.parse(params.payload); } catch { return; }
     if (!payload || typeof payload.type !== 'string') return;
+    if (payload.type === 'auto-start') {
+      if (!recordingActive) {
+        recordingActive = true;
+        sendToApp('recording-auto-start', { reason: payload.reason || 'play-start' });
+      }
+      return;
+    }
+    if (!recordingActive) return;
     if (payload.type === 'auto-stop') {
       recordingActive = false;
       sendToApp('recording-auto-stop', { status: 'incomplete', reason: payload.reason || 'game-action' });
@@ -214,7 +229,9 @@ function createWindow() {
     }
     return { action: 'deny' };
   });
-  void gameView.webContents.loadURL(DEFAULT_GAME_URL);
+  void attachCapture()
+    .then(() => gameView && gameView.webContents.loadURL(DEFAULT_GAME_URL))
+    .catch((error) => console.error('[GAME] Failed to initialize Chromium capture:', error));
 
   if (process.env.VITE_DEV_SERVER_URL) void mainWindow.loadURL(APP_URL);
   else void mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
