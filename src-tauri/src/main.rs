@@ -304,7 +304,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     return { table: found, vueRoots: roots.length };
   };
   const cardRank = (card) => {
-    const values = [card && card.cardName, card && card.rank, card && card.value, card && card.name, card && card.id];
+    const values = [card && card.cardName, card && card.rank, card && card.value, card && card.name];
     for (const value of values) {
       if (typeof value === 'number') {
         if (value === 14 || value === 1) return 'A';
@@ -330,7 +330,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     if (/club|♣|\bc\b/.test(text)) return 'C';
     if (/diamond|♦|\bd\b/.test(text)) return 'D';
     if (/heart|♥|\bh\b/.test(text)) return 'H';
-    const raw = [card && card.cardName, card && card.name, card && card.id].map(String).join(' ');
+    const raw = [card && card.cardName, card && card.name].map(String).join(' ');
     const code = raw.match(/(?:^|[^A-Z0-9])(10|[A2-9JQKT])[_ -]?([CDHS])(?:$|[^A-Z0-9])/i);
     return code ? code[2].toUpperCase() : '';
   };
@@ -385,7 +385,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
         const code = faceUp === false ? 'BACK' : (rank && suit ? rank + suit : 'UNKNOWN');
         cards.push({
           code,
-          faceUp: faceUp === true && !!(rank && suit),
+          faceUp,
           slot: slotPrefix + ':' + String(index + 1).padStart(2, '0')
         });
       });
@@ -397,7 +397,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     appendContainer(table.baseContainer, 'base');
     if (!cards.length) { reportDiagnostic('game-cards-unreadable'); return null; }
     reportDiagnostic('game-cards-found');
-    const signature = cards.map((card) => card.slot + '=' + card.code + (card.faceUp ? ':UP' : ':DOWN')).join('|');
+    const signature = cards.map((card) => card.slot + '=' + card.code + (card.faceUp === true ? ':UP' : card.faceUp === false ? ':DOWN' : ':STATE?')).join('|');
     return { cards, signature };
   };
   const captureBoard = () => {
