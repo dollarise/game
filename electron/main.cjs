@@ -12,7 +12,7 @@ let cdpAttached = false;
 let captureInstalled = false;
 let scriptIdentifier = null;
 
-const CAPTURE_SCRIPT = String.raw\`(() => {
+const CAPTURE_SCRIPT = String.raw`(() => {
   if (window.__GAME_CAPTURE_INSTALLED__) return;
   Object.defineProperty(window, '__GAME_CAPTURE_INSTALLED__', { value: true });
   const emit = (payload) => {
@@ -104,7 +104,7 @@ const CAPTURE_SCRIPT = String.raw\`(() => {
   observe();
   if (!document.documentElement) document.addEventListener('DOMContentLoaded', observe, { once: true });
   scheduleBoard();
-})();\`;
+})();`;
 
 function sendToApp(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
