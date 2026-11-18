@@ -59,7 +59,6 @@ export default function App() {
   const [mobileNav, setMobileNav] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState<'waiting' | 'recording' | 'paused'>('waiting');
   const [startingRecording, setStartingRecording] = useState(false);
-  const [recordingEvents, setRecordingEvents] = useState<MouseEventData[]>([]);
   const [recordingDiagnostics, setRecordingDiagnostics] = useState<string[]>([]);
   const recordingEventsRef = useRef<MouseEventData[]>([]);
   const recordingSaveStatusRef = useRef<'completed' | 'incomplete'>('completed');
@@ -125,7 +124,6 @@ export default function App() {
     boardMatchChecked.current = false;
     setPatternAlert(null);
     setElapsedMs(0);
-    setRecordingEvents([]);
     setRecordingStatus('recording');
     setSection('browser');
     ping(message);
@@ -201,7 +199,6 @@ export default function App() {
       }
       const nextEvents = [...currentEvents, { ...payload, x: payload.x ?? 0, y: payload.y ?? 0, elapsed_ms: Math.round(elapsed) }];
       recordingEventsRef.current = nextEvents;
-      setRecordingEvents(nextEvents);
     }).then((stop) => { if (active) unlistenInput = stop; else stop(); });
     // The game page supplies mouse data only; recording controls stay in GAME.
     return () => { active = false; unlistenInput?.(); };
@@ -360,7 +357,7 @@ export default function App() {
           <button className={section === 'data' ? 'nav-item active' : 'nav-item'} onClick={() => { if (recordingStatus !== 'waiting') { ping('Tekan Stop untuk menyimpan rekaman sebelum membuka Buka Data.'); return; } setSection('data'); setMobileNav(false); }}><HardDrive size={18}/><span>Buka Data</span>{records.length > 0 && <small>{records.length}</small>}</button>
           {isSuperAdmin && <button className={section === 'admin' ? 'nav-item active' : 'nav-item'} onClick={() => { setSection('admin'); setMobileNav(false); }}><Users size={18}/><span>Manajemen Pengguna</span>{section === 'admin' && <span className="nav-dot"/>}</button>}
           <div className="recording-toolbar sidebar-recording-toolbar">
-            <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Siap Merekam' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Tekan Rekam di aplikasi untuk memulai sesi' : recordingEvents.length.toLocaleString('id-ID') + ' aktivitas mouse terekam'}</span></div></div>
+            <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Siap Merekam' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Tekan Rekam di aplikasi untuk memulai sesi' : recordingEventsRef.current.length.toLocaleString('id-ID') + ' aktivitas mouse terekam'}</span></div></div>
             <div className="recording-actions">
               {recordingStatus === 'waiting' && <button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); void startManualRecording(); }} disabled={startingRecording}><Play size={15}/> {startingRecording ? 'Memulai...' : 'Rekam'}</button>}
               {recordingStatus === 'recording' && <button className="button button-secondary" onClick={pauseRecording}><Pause size={15}/> Jeda</button>}
