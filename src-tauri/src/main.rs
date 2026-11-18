@@ -78,6 +78,17 @@ struct RecordingInput {
     label: Option<String>,
 }
 
+#[derive(Clone, serde::Serialize)]
+struct RecordingDiagnostic { stage: String }
+
+#[tauri::command]
+fn recording_diagnostic(webview: Webview, app: AppHandle, stage: String) -> Result<(), String> {
+    if webview.label() != "game-browser" { return Err("Diagnosis hanya diterima dari browser GAME.".to_string()); }
+    let allowed = ["start-received", "iframe-start-sent", "mouse-captured", "iframe-event-relayed"];
+    if !allowed.contains(&stage.as_str()) { return Err("Tahap diagnosis tidak dikenal.".to_string()); }
+    app.emit("recording-diagnostic", RecordingDiagnostic { stage }).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn recording_event(
     webview: Webview,
@@ -141,6 +152,12 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   let dragStart = null;
   let suppressClickUntil = 0;
   const isTopFrame = window.top === window;
+  const reportDiagnostic = (stage) => {
+    if (isTopFrame) void invoke('recording_diagnostic', { stage }).catch((error) => console.warn('[GAME recording] Diagnostic failed:', error));
+    else { try { window.top.postMessage({ type: 'GAME_MOUSE_RECORDING_DIAGNOSTIC', stage }, '*'); } catch (_) {} }
+  };
+  let reportedMouseCapture = false;
+  let reportedRelay = false;
   const send = (eventType, data = {}) => {
     const payload = {
       eventType,
@@ -163,7 +180,10 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   };
   if (isTopFrame) {
     window.addEventListener('message', (event) => {
-      if (!started || !event.data || event.data.type !== 'GAME_MOUSE_RECORDING_EVENT') return;
+      if (!event.data) return;
+      if (event.data.type === 'GAME_MOUSE_RECORDING_DIAGNOSTIC') { if (typeof event.data.stage === 'string') reportDiagnostic(event.data.stage); return; }
+      if (!started || event.data.type !== 'GAME_MOUSE_RECORDING_EVENT') return;
+      if (!reportedRelay) { reportedRelay = true; reportDiagnostic('iframe-event-relayed'); }
       const payload = event.data.payload;
       if (!payload || !['move', 'click', 'board'].includes(payload.eventType)) return;
       void invoke('recording_event', payload).catch((error) => {
@@ -311,7 +331,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   const notifyFrameStarted = (frame) => {
     if (!(frame instanceof HTMLIFrameElement)) return;
     const notify = () => {
-      try { frame.contentWindow?.postMessage(startMessage, '*'); } catch (_) {}
+      try { frame.contentWindow?.postMessage(startMessage, '*'); reportDiagnostic('iframe-start-sent'); } catch (_) {}
     };
     frame.addEventListener('load', notify);
     notify();
@@ -333,6 +353,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   // Start capture only when the user presses Rekam in the GAME toolbar.
   window.addEventListener('message', (event) => {
     if (!event.data || event.data.type !== 'GAME_MANUAL_START_RECORDING') return;
+    reportDiagnostic('start-received');
     if (!started) {
       started = true;
       startBoardObserver();
@@ -374,6 +395,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   }, { capture: true, passive: true });
   document.addEventListener('pointermove', (event) => {
     if (!started) return;
+    if (!reportedMouseCapture) { reportedMouseCapture = true; reportDiagnostic('mouse-captured'); }
     const now = performance.now();
     if (now - lastMoveAt < 35 || (Math.abs(event.clientX - lastX) < 2 && Math.abs(event.clientY - lastY) < 2)) return;
     lastMoveAt = now; lastX = event.clientX; lastY = event.clientY;
@@ -423,7 +445,8 @@ fn main() {
             browser_reload,
             browser_set_bounds,
             browser_set_visible,
-            recording_event
+            recording_event,
+            recording_diagnostic
         ])
         .run(tauri::generate_context!())
         .expect("Gagal menjalankan GAME Desktop");
