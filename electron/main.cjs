@@ -11,6 +11,7 @@ let recordingActive = false;
 let captureInstalled = false;
 let captureMessageListenerAttached = false;
 let scriptIdentifier = null;
+const captureContextIds = new Map();
 
 const CAPTURE_SCRIPT = String.raw`(() => {
   if (window.__GAME_CAPTURE_INSTALLED__) return;
@@ -56,6 +57,13 @@ const CAPTURE_SCRIPT = String.raw`(() => {
     const signature = cards.map(card => card.slot + ':' + card.code + ':' + (card.faceUp ? '1' : '0')).sort().join('|');
     return { cards, signature };
   };
+  const captureBoardNow = () => {
+    const snapshot = boardSnapshot();
+    if (!snapshot) return;
+    lastBoardSignature = snapshot.signature;
+    emit({ type: 'board', x: 0, y: 0, button: null, label: JSON.stringify(snapshot), pageUrl: location.href });
+  };
+  window.__GAME_CAPTURE_BOARD__ = captureBoardNow;
   const scheduleBoard = () => {
     clearTimeout(boardTimer);
     boardTimer = setTimeout(() => {
@@ -134,6 +142,23 @@ function attachCapture() {
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
   if (!captureMessageListenerAttached) {
     wc.debugger.on('message', (_event, method, params) => {
+      if (method === 'Runtime.executionContextCreated') {
+        const context = params.context;
+        if (context?.name === 'GAMERecorder' && context.auxData?.frameId) {
+          captureContextIds.set(context.auxData.frameId, context.id);
+        }
+        return;
+      }
+      if (method === 'Runtime.executionContextDestroyed') {
+        for (const [frameId, contextId] of captureContextIds) {
+          if (contextId === params.executionContextId) captureContextIds.delete(frameId);
+        }
+        return;
+      }
+      if (method === 'Runtime.executionContextsCleared') {
+        captureContextIds.clear();
+        return;
+      }
       if (method !== 'Runtime.bindingCalled' || params.name !== '__GAME_CAPTURE' || !isAllowedRecordingPage(gameView?.webContents.getURL() || '')) return;
       let payload;
       try { payload = JSON.parse(params.payload); } catch { return; }
@@ -181,12 +206,26 @@ function attachCapture() {
           const world = await wc.debugger.sendCommand('Page.createIsolatedWorld', {
             frameId, worldName: 'GAMERecorder', grantUniveralAccess: false
           });
+          captureContextIds.set(frameId, world.executionContextId);
           await wc.debugger.sendCommand('Runtime.evaluate', {
             contextId: world.executionContextId, expression: CAPTURE_SCRIPT
           });
         } catch (_) {}
       }
     });
+}
+
+async function captureCurrentBoards() {
+  if (!gameView || gameView.webContents.isDestroyed() || !gameView.webContents.debugger.isAttached()) return;
+  const wc = gameView.webContents;
+  for (const contextId of captureContextIds.values()) {
+    try {
+      await wc.debugger.sendCommand('Runtime.evaluate', {
+        contextId,
+        expression: "if (typeof window.__GAME_CAPTURE_BOARD__ === 'function') window.__GAME_CAPTURE_BOARD__();"
+      });
+    } catch (_) {}
+  }
 }
 
 function createWindow() {
@@ -286,6 +325,7 @@ ipcMain.handle('game:invoke', async (event, command, args = {}) => {
       recordingActive = true;
       return { stages: ['electron-start-command', 'chromium-cdp-attached', 'capture-script-injected'], browser_error: null };
     }
+    case 'recording_snapshot': await captureCurrentBoards(); return null;
     case 'recording_pause': recordingActive = false; return null;
     case 'recording_resume': {
       if (!isAllowedRecordingPage(wc.getURL())) throw new Error('Halaman Solitaire tidak aktif.');
