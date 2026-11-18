@@ -2,27 +2,11 @@
 
 const { app, BrowserWindow, WebContentsView, ipcMain } = require('electron');
 const path = require('node:path');
-
-const GAME_HOSTS = new Set(['1xlite-6487.com', '1xlite-7498.com']);
+const { parseHttpUrl, isAllowedSolitaire } = require('./security.cjs');
 const START_URL = 'https://1xlite-6487.com/en/games/solitaire';
 let mainWindow;
 let browserView;
 let browserVisible = false;
-
-function parseHttpUrl(value) {
-  let parsed;
-  try { parsed = new URL(value); } catch { throw new Error('Alamat browser tidak valid.'); }
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    throw new Error('Browser hanya menerima alamat HTTP atau HTTPS.');
-  }
-  return parsed;
-}
-
-function isAllowedSolitaire(urlValue) {
-  const url = parseHttpUrl(urlValue);
-  return url.protocol === 'https:' && GAME_HOSTS.has(url.hostname) &&
-    url.pathname.startsWith('/en/games/solitaire');
-}
 
 function sendToUi(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
@@ -136,7 +120,7 @@ function createWindow() {
     height: 900,
     minWidth: 980,
     minHeight: 650,
-    title: 'GAME',
+    title: 'GAME Electron Preview v1.5.0',
     backgroundColor: '#0b1220',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
