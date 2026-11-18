@@ -1,0 +1,48 @@
+name: GAME Electron Preview — Windows Installer
+
+on:
+  push:
+    branches:
+      - migration/electron-chromium
+    paths:
+      - 'electron/**'
+      - 'src/**'
+      - 'package.json'
+      - 'vite.config.ts'
+      - '.github/workflows/electron-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-electron-installer:
+    name: Build Electron Chromium installer (Windows x64)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout migration branch
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build React frontend
+        run: npm run build
+
+      - name: Build Electron NSIS installer
+        run: npx electron-builder --win nsis
+
+      - name: Upload Electron preview installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: GAME-Electron-v1.5.0-Windows-Preview
+          path: release/*.exe
+          if-no-files-found: error
+          retention-days: 14
