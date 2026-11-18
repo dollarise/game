@@ -171,12 +171,14 @@ function attachCapture() {
         }
         return;
       }
-      if (!recordingActive) return;
       if (payload.type === 'auto-stop') {
+        if (!recordingActive && !recordingPaused) return;
         recordingActive = false;
+        recordingPaused = false;
         sendToApp('recording-auto-stop', { status: 'incomplete', reason: payload.reason || 'game-action' });
         return;
       }
+      if (!recordingActive) return;
       if (!['click', 'move', 'board'].includes(payload.type)) return;
       sendToApp('recording-input', {
         type: payload.type,
@@ -259,7 +261,7 @@ function createWindow() {
 
   const handleBrowserNavigation = (url) => {
     sendToApp('browser-url-changed', url);
-    if (recordingActive && !isAllowedRecordingPage(url)) {
+    if ((recordingActive || recordingPaused) && !isAllowedRecordingPage(url)) {
       recordingActive = false;
       recordingPaused = false;
       sendToApp('recording-auto-stop', { status: 'incomplete', reason: 'left-game-page' });
