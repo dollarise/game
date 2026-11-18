@@ -31,3 +31,11 @@ test('browser recorder injection script is valid JavaScript', () => {
   const source = fs.readFileSync(path.join(__dirname, 'browser-recorder.js'), 'utf8');
   assert.doesNotThrow(() => new vm.Script(source));
 });
+
+
+test('browser preload accepts Solitaire board-capture diagnostics', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'browser-preload.cjs'), 'utf8');
+  for (const stage of ['board-elements-not-found', 'board-cards-detected', 'board-snapshot-captured']) {
+    assert.ok(source.includes(stage), 'missing diagnostic stage: ' + stage);
+  }
+});
