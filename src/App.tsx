@@ -327,7 +327,17 @@ export default function App() {
     savingRecordRef.current = true;
     setSavingRecord(true);
     const recordedAt = new Date().toISOString();
-    const title = await createUniqueRecordingTitle(session.user.id, recordedAt);
+    let title: string;
+    try {
+      title = await createUniqueRecordingTitle(session.user.id, recordedAt);
+    } catch (error) {
+      savingRecordRef.current = false;
+      setSavingRecord(false);
+      setRecordingStatus('paused');
+      setElapsedMs(duration);
+      ping('Gagal membuat nomor rekaman. Data masih tersedia; tekan Stop lagi untuk mencoba: ' + String(error));
+      return;
+    }
     const { data, error } = await db.from('game_mouse_recordings')
       .insert({ user_id: session.user.id, title, duration_ms: Math.round(duration), event_count: events.length, events, status: saveStatus })
       .select('id,title,duration_ms,event_count,status,recorded_at').single();
