@@ -3,19 +3,20 @@
 const { ipcRenderer } = require('electron');
 
 // This preload is attached only to the isolated game-browser WebContentsView.
-// Page scripts and cross-origin child frames can relay data through postMessage,
-// but cannot access Node.js or arbitrary IPC channels.
+// Cross-origin child frames relay data to the top frame with postMessage;
+// only these two explicit message types are forwarded to the main process.
 window.addEventListener('message', (event) => {
   const message = event.data;
   if (!message || typeof message !== 'object') return;
 
-  if (message.type === 'GAME_MOUSE_RECORDING_DIAGNOSTIC' &&
-      ['start-received', 'mouse-captured'].includes(message.stage)) {
+  if (message.type === 'GAME_ELECTRON_RECORDING_DIAGNOSTIC_TO_NATIVE' &&
+      ['native-start-command', 'start-message-sent', 'start-received', 'iframe-start-sent',
+       'mouse-captured', 'iframe-event-relayed'].includes(message.stage)) {
     ipcRenderer.send('browser:recording-diagnostic', message.stage);
     return;
   }
 
-  if (message.type !== 'GAME_MOUSE_RECORDING_EVENT') return;
+  if (message.type !== 'GAME_ELECTRON_RECORDING_EVENT_TO_NATIVE') return;
   const payload = message.payload;
   if (!payload || !['move', 'click', 'board'].includes(payload.eventType)) return;
 
