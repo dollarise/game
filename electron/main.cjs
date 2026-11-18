@@ -1,9 +1,11 @@
 'use strict';
 
-const { app, BrowserWindow, WebContentsView, ipcMain } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, webFrameMain } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs');
 const { parseHttpUrl, isAllowedSolitaire } = require('./security.cjs');
 const START_URL = 'https://1xlite-6487.com/en/games/solitaire';
+const RECORDER_SCRIPT = fs.readFileSync(path.join(__dirname, 'browser-recorder.js'), 'utf8');
 let mainWindow;
 let browserView;
 let browserVisible = false;
@@ -31,6 +33,13 @@ function createBrowserView() {
   contents.setWindowOpenHandler(() => ({ action: 'deny' }));
   contents.on('will-navigate', (event, url) => {
     try { parseHttpUrl(url); } catch { event.preventDefault(); }
+  });
+  contents.on('did-frame-navigate', (_event, _url, _code, _status, _isMainFrame, processId, routingId) => {
+    const frame = webFrameMain.fromId(processId, routingId);
+    if (!frame || frame.detached) return;
+    frame.executeJavaScript(RECORDER_SCRIPT).catch(() => {
+      // A frame may be replaced while the injection is in flight.
+    });
   });
   contents.on('did-navigate', (_event, url) => sendToUi('browser:url-changed', url));
   contents.on('did-navigate-in-page', (_event, url) => sendToUi('browser:url-changed', url));
@@ -130,7 +139,6 @@ function createWindow() {
     }
   });
   createBrowserView();
-  registerIpc();
 
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) mainWindow.loadURL(devUrl);
@@ -144,6 +152,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  registerIpc();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
