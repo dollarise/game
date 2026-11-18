@@ -112,6 +112,7 @@
       root.getAttribute('data-rank'), root.getAttribute('data-suit'),
       root.getAttribute('aria-label'), root.getAttribute('title'),
       root.getAttribute('alt'), root.getAttribute('src'), root.getAttribute('href'), root.getAttribute('xlink:href'), root.getAttribute('fill'), root.getAttribute('transform'), root.textContent,
+      root.namespaceURI === 'http://www.w3.org/2000/svg' ? root.outerHTML : '',
       style.backgroundImage, style.backgroundPosition, style.backgroundSize,
       ...descendants.flatMap((item) => [item.currentSrc, item.getAttribute('src'), item.getAttribute('href'), item.getAttribute('xlink:href'), item.getAttribute('data-src'), item.getAttribute('alt'), item.getAttribute('title'), item.getAttribute('data-rank'), item.getAttribute('data-suit')])
     ].filter(Boolean).join('|').replace(/\s+/g, ' ').trim().slice(0, 1200);
