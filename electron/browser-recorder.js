@@ -21,9 +21,6 @@
     return Promise.reject(new Error('Perintah perekam tidak dikenal.'));
   };
   let started = false;
-  let lastMoveAt = 0;
-  let lastX = -10000;
-  let lastY = -10000;
   let dragStart = null;
   let suppressClickUntil = 0;
   const isTopFrame = window.top === window;
@@ -305,12 +302,5 @@
     void send('click', { x: event.clientX, y: event.clientY, button: 0, label })
       .then(() => window.setTimeout(captureBoard, 350));
   }, { capture: true, passive: true });
-  document.addEventListener('pointermove', (event) => {
-    if (!started) return;
-    if (!reportedMouseCapture) { reportedMouseCapture = true; reportDiagnostic('mouse-captured'); }
-    const now = performance.now();
-    if (now - lastMoveAt < 35 || (Math.abs(event.clientX - lastX) < 2 && Math.abs(event.clientY - lastY) < 2)) return;
-    lastMoveAt = now; lastX = event.clientX; lastY = event.clientY;
-    void send('move', { x: event.clientX, y: event.clientY });
-  }, { capture: true, passive: true });
+
 })();
