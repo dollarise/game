@@ -58,6 +58,7 @@ export default function App() {
   const boardMatchChecked = useRef(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState<'waiting' | 'recording' | 'paused'>('waiting');
+  const [startingRecording, setStartingRecording] = useState(false);
   const [recordingEvents, setRecordingEvents] = useState<MouseEventData[]>([]);
   const recordingEventsRef = useRef<MouseEventData[]>([]);
   const recordingSaveStatusRef = useRef<'completed' | 'incomplete'>('completed');
@@ -111,6 +112,25 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [recordingStatus]);
 
+  function beginRecordingSession(message: string) {
+    if (recordingSessionActive.current) {
+      setRecordingStatus('recording');
+      return;
+    }
+    recordingSessionActive.current = true;
+    accumulatedMs.current = 0;
+    recordingStartedAt.current = Date.now();
+    recordingEventsRef.current = [];
+    recordingSaveStatusRef.current = 'completed';
+    boardMatchChecked.current = false;
+    setPatternAlert(null);
+    setElapsedMs(0);
+    setRecordingEvents([]);
+    setRecordingStatus('recording');
+    setSection('browser');
+    ping(message);
+  }
+
   useEffect(() => {
     let active = true;
     let unlistenStart: (() => void) | undefined;
@@ -118,19 +138,8 @@ export default function App() {
     let unlistenAutoStop: (() => void) | undefined;
     let unlistenAutoComplete: (() => void) | undefined;
     void listen('recording-auto-start', () => {
-      if (!active || recordingSessionActive.current) return;
-      recordingSessionActive.current = true;
-      accumulatedMs.current = 0;
-      recordingStartedAt.current = Date.now();
-      recordingEventsRef.current = [];
-      recordingSaveStatusRef.current = 'completed';
-      boardMatchChecked.current = false;
-      setPatternAlert(null);
-      setElapsedMs(0);
-      setRecordingEvents([]);
-      setRecordingStatus('recording');
-      setSection('browser');
-      ping('Permainan dimulai. Rekaman mouse otomatis berjalan.');
+      if (!active) return;
+      beginRecordingSession('Permainan dimulai. Rekaman mouse otomatis berjalan.');
     }).then((stop) => { if (active) unlistenStart = stop; else stop(); });
     void listen<Omit<MouseEventData, 'elapsed_ms'> & { type: 'move' | 'click' | 'board' }>('recording-input', async (event) => {
       if (!active || recordingStartedAt.current === null) return;
@@ -252,9 +261,25 @@ export default function App() {
   }
 
   async function startManualRecording() {
-    if (recordingStatus !== 'waiting' || recordingSessionActive.current) return;
-    try { await invoke('browser_start_recording'); }
-    catch (error) { ping('Tidak dapat memulai rekaman manual: ' + String(error)); }
+    if (startingRecording) return;
+    if (recordingSessionActive.current) {
+      setRecordingStatus('recording');
+      ping('Sesi rekaman sudah berjalan.');
+      return;
+    }
+    if (recordingStatus !== 'waiting') return;
+    setStartingRecording(true);
+    try {
+      // Start the React session directly after the native command succeeds.
+      // This avoids depending only on an asynchronously registered Tauri
+      // event listener to update the Rekam controls.
+      await invoke('browser_start_recording');
+      beginRecordingSession('Rekaman manual dimulai. Silakan mainkan Solitaire.');
+    } catch (error) {
+      ping('Tidak dapat memulai rekaman manual: ' + String(error));
+    } finally {
+      setStartingRecording(false);
+    }
   }
 
   function pauseRecording() {
@@ -553,7 +578,7 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, ev
       <div className="recording-toolbar">
         <div className="recording-indicator"><span className={recordingStatus === 'recording' ? 'recording-dot active' : 'recording-dot'}/><div><b>{recordingStatus === 'waiting' ? 'Menunggu Play / Start Game' : recordingStatus === 'paused' ? 'Rekam · Dijeda' : 'Rekam · ' + formatDuration(elapsedMs)}</b><span>{recordingStatus === 'waiting' ? 'Klik tombol Play di dalam Solitaire untuk mulai otomatis' : eventCount.toLocaleString('id-ID') + ' aktivitas mouse terekam'}</span></div></div>
         <div className="recording-actions">
-          {recordingStatus === 'waiting' && <button className="button button-primary" onClick={onStart}><Play size={15}/> Rekam</button>}
+          {recordingStatus === 'waiting' && <button className="button button-primary" onClick={onStart} disabled={startingRecording}><Play size={15}/> {startingRecording ? 'Memulai...' : 'Rekam'}</button>}
           {recordingStatus === 'recording' && <button className="button button-secondary" onClick={onPause}><Pause size={15}/> Jeda</button>}
           {recordingStatus === 'paused' && <button className="button button-primary" onClick={onResume}><Play size={15}/> Lanjutkan</button>}
           {recordingStatus !== 'waiting' && <button className="button button-danger" onClick={onStop} disabled={savingRecord}>{savingRecord ? <LoaderCircle className="spin" size={15}/> : <Square size={14}/>} {savingRecord ? 'Menyimpan...' : 'Stop'}</button>}
