@@ -149,7 +149,7 @@ export default function App() {
       const payload = event.payload;
       if (payload.type === 'board') {
         const snapshot = decodeBoardSnapshot(payload.label);
-        if (snapshot && snapshot.cards.length > 0 && !boardMatchChecked.current && db && session) {
+        if (snapshot && snapshot.cards.length > 0 && !boardMatchChecked.current && db) {
           boardMatchChecked.current = true;
           const currentSession = sessionRef.current;
           if (!currentSession) return;
