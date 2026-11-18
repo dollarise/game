@@ -34,7 +34,7 @@ The desktop migration is in progress on branch `migration/electron-chromium`.
 - Windows preview builds are produced by the `GAME Electron Preview — Windows Installer` workflow and uploaded as a GitHub Actions artifact.
 - Run the URL policy tests with `npm run test:desktop`.
 
-**Not a release yet:** the existing React app and recording lifecycle still need full end-to-end verification. The current Electron browser preload captures trusted pointer input in the top-level game document; cross-origin game-frame capture and board snapshots still need to be ported and tested. Do not remove the existing Tauri application or use the preview as a replacement until the installer, browser, recording, pause/resume, stop/save, and Buka Data flows all pass Windows tests.
+**Not a release yet:** the existing React app and recording lifecycle still need full end-to-end verification. The Electron main process now injects the existing Solitaire mouse and board-snapshot recorder into Chromium frames, including cross-origin game frames, and relays events through the isolated preload. This port still needs live-site verification on Windows. Do not remove the existing Tauri application or use the preview as a replacement until the installer, browser, recording, pause/resume, stop/save, and Buka Data flows all pass Windows tests.
 
 ### Electron preview development
 
