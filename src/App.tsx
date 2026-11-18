@@ -286,24 +286,16 @@ export default function App() {
 
   async function stopRecording(status?: 'completed' | 'incomplete') {
     if (status) recordingSaveStatusRef.current = status;
-    const saveStatus = recordingSaveStatusRef.current;
     if (!db || !session || !recordingSessionActive.current || savingRecordRef.current) return;
     if (recordingStartedAt.current !== null) {
       accumulatedMs.current += Date.now() - recordingStartedAt.current;
       recordingStartedAt.current = null;
     }
     const duration = accumulatedMs.current;
-    const events = recordingEventsRef.current;
-    if (events.length === 0) {
-      recordingSessionActive.current = false;
-      setRecordingStatus('waiting');
-      setElapsedMs(0);
-      accumulatedMs.current = 0;
-      recordingEventsRef.current = [];
-      setRecordingEvents([]);
-      ping('Tidak ada aktivitas mouse yang terekam.');
-      return;
-    }
+    const events = [...recordingEventsRef.current];
+    // Never discard a session on Stop just because the event stream is empty.
+    // Save it as incomplete so the user can see the session in Buka Data.
+    const saveStatus = events.length === 0 ? 'incomplete' : recordingSaveStatusRef.current;
     savingRecordRef.current = true;
     setSavingRecord(true);
     const recordedAt = new Date().toISOString();
@@ -328,9 +320,11 @@ export default function App() {
     accumulatedMs.current = 0;
     recordingStartedAt.current = null;
     recordingSaveStatusRef.current = 'completed';
-    ping(saveStatus === 'incomplete'
-      ? 'Give up terdeteksi. Rekaman disimpan ke Buka Data > Belum Selesai.'
-      : 'Rekaman berhasil disimpan ke Buka Data > Selesai.');
+    ping(events.length === 0
+      ? 'Sesi disimpan ke Buka Data > Belum Selesai, tetapi tidak ada aktivitas mouse yang diterima.'
+      : saveStatus === 'incomplete'
+        ? 'Rekaman disimpan ke Buka Data > Belum Selesai.'
+        : 'Rekaman berhasil disimpan ke Buka Data > Selesai.');
   }
 
   async function signOut() {
@@ -356,7 +350,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Rekam langkah dan kondisi Solitaire</span></div></div>
           <button className="settings-link" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={17}/> Pengaturan <ChevronDown size={15}/></button>
-          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.3.9</span></div>
+          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.4.0</span></div>
         </div>
       </aside>
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
