@@ -147,7 +147,7 @@ function attachCapture() {
   return wc.debugger.sendCommand('Runtime.enable')
     .then(() => wc.debugger.sendCommand('Runtime.addBinding', { name: '__GAME_CAPTURE' }))
     .then(() => wc.debugger.sendCommand('Page.enable'))
-    .then(() => wc.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: CAPTURE_SCRIPT }))
+    .then(() => wc.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument', { source: CAPTURE_SCRIPT, worldName: 'GAMERecorder' }))
     .then(async (result) => {
       scriptIdentifier = result.identifier;
       captureInstalled = true;
