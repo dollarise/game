@@ -2,6 +2,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 const { parseHttpUrl, isAllowedSolitaire } = require('./security.cjs');
 
 test('browser navigation accepts HTTP and HTTPS URLs', () => {
@@ -21,4 +24,10 @@ test('recording is restricted to the configured HTTPS Solitaire pages', () => {
   assert.equal(isAllowedSolitaire('http://1xlite-6487.com/en/games/solitaire'), false);
   assert.equal(isAllowedSolitaire('https://1xlite-6487.com/other'), false);
   assert.equal(isAllowedSolitaire('https://1xlite-6487.com.evil.example/en/games/solitaire'), false);
+});
+
+
+test('browser recorder injection script is valid JavaScript', () => {
+  const source = fs.readFileSync(path.join(__dirname, 'browser-recorder.js'), 'utf8');
+  assert.doesNotThrow(() => new vm.Script(source));
 });
