@@ -135,8 +135,6 @@ export default function App() {
     let active = true;
     let unlistenStart: (() => void) | undefined;
     let unlistenInput: (() => void) | undefined;
-    let unlistenAutoStop: (() => void) | undefined;
-    let unlistenAutoComplete: (() => void) | undefined;
     void listen('recording-auto-start', () => {
       if (!active) return;
       beginRecordingSession('Permainan dimulai. Rekaman mouse otomatis berjalan.');
@@ -201,13 +199,9 @@ export default function App() {
       recordingEventsRef.current = nextEvents;
       setRecordingEvents(nextEvents);
     }).then((stop) => { if (active) unlistenInput = stop; else stop(); });
-    void listen('recording-auto-stop', () => {
-      if (active) autoStopRecordingRef.current();
-    }).then((stop) => { if (active) unlistenAutoStop = stop; else stop(); });
-    void listen('recording-auto-complete', () => {
-      if (active) autoCompleteRecordingRef.current();
-    }).then((stop) => { if (active) unlistenAutoComplete = stop; else stop(); });
-    return () => { active = false; unlistenStart?.(); unlistenInput?.(); unlistenAutoStop?.(); unlistenAutoComplete?.(); };
+    // Web game events must never end a recording session. Only the app's
+    // explicit Stop button is allowed to save and close the active session.
+    return () => { active = false; unlistenStart?.(); unlistenInput?.(); };
   }, []);
 
   const filteredRecords = useMemo(() => records.filter((item) =>
