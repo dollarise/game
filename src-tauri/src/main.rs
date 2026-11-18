@@ -23,7 +23,7 @@ fn browser_start_recording(app: AppHandle) -> Result<(), String> {
     let view = browser_view(&app)?;
     let current = view.url().map_err(|error| error.to_string())?;
     let is_solitaire_page = current.scheme() == "https"
-        && current.host_str() == Some("1xlite-6487.com")
+        && matches!(current.host_str(), Some("1xlite-6487.com" | "1xlite-7498.com"))
         && current.path().starts_with("/en/games/solitaire");
     if !is_solitaire_page {
         return Err("Perekaman hanya diizinkan pada halaman Solitaire yang ditentukan.".to_string());
@@ -96,7 +96,7 @@ fn recording_event(
     // inside a cross-origin iframe, so the child frame URL is not authoritative.
     let current = webview.url().map_err(|error| error.to_string())?;
     let is_solitaire_page = current.scheme() == "https"
-        && current.host_str() == Some("1xlite-6487.com")
+        && matches!(current.host_str(), Some("1xlite-6487.com" | "1xlite-7498.com"))
         && current.path().starts_with("/en/games/solitaire");
     if !is_solitaire_page {
         return Err("Perekaman hanya diizinkan pada halaman Solitaire yang ditentukan.".to_string());
