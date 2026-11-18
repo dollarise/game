@@ -1,7 +1,9 @@
 node_modules
 dist
+release
 .env
 .env.local
 *.tsbuildinfo
+.DS_Store
 src-tauri/target
 src-tauri/gen/schemas
