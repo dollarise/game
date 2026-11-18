@@ -117,6 +117,29 @@ export function inferGameStep(
     };
   }
 
+  // A stock draw introduces a face-up card into the waste pile. It has no
+  // face-up identity in the previous snapshot, so ordinary move matching
+  // cannot see it; identify this transition from the structured API snapshots.
+  const newlyDrawn = [...after.entries()]
+    .filter(([identity, entries]) =>
+      !before.has(identity) &&
+      entries.length === 1 &&
+      entries[0].slot.startsWith('waste:open:')
+    )
+    .map(([, entries]) => entries[0].label);
+  if (newlyDrawn.length > 0) {
+    return {
+      kind: 'reveal',
+      cards: newlyDrawn,
+      from: 'stock:closed',
+      to: 'waste:open',
+      description: newlyDrawn.length === 1
+        ? `Ambil kartu ${newlyDrawn[0]} dari tumpukan kartu`
+        : `Ambil ${newlyDrawn.length} kartu dari tumpukan kartu: ${newlyDrawn.join(', ')}`,
+      confidence: 'observed'
+    };
+  }
+
   return null;
 }
 
