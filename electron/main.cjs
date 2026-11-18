@@ -15,6 +15,7 @@ function sendToUi(channel, payload) {
 }
 
 function createBrowserView() {
+  if (browserView && !browserView.webContents.isDestroyed()) return browserView;
   browserView = new WebContentsView({
     webPreferences: {
       preload: path.join(__dirname, 'browser-preload.cjs'),
@@ -53,25 +54,28 @@ function createBrowserView() {
 
 function registerIpc() {
   ipcMain.handle('browser:navigate', async (_event, value) => {
+    if (!browserView || browserView.webContents.isDestroyed()) createBrowserView();
     const url = parseHttpUrl(value);
     await browserView.webContents.loadURL(url.toString());
     return true;
   });
   ipcMain.handle('browser:back', () => {
-    if (browserView.webContents.canGoBack()) browserView.webContents.goBack();
+    if (browserView && !browserView.webContents.isDestroyed() && browserView.webContents.canGoBack()) browserView.webContents.goBack();
     return true;
   });
   ipcMain.handle('browser:forward', () => {
-    if (browserView.webContents.canGoForward()) browserView.webContents.goForward();
+    if (browserView && !browserView.webContents.isDestroyed() && browserView.webContents.canGoForward()) browserView.webContents.goForward();
     return true;
   });
-  ipcMain.handle('browser:reload', () => { browserView.webContents.reload(); return true; });
+  ipcMain.handle('browser:reload', () => { if (browserView && !browserView.webContents.isDestroyed()) browserView.webContents.reload(); return true; });
   ipcMain.handle('browser:set-visible', (_event, visible) => {
     browserVisible = Boolean(visible);
-    browserView.setVisible(browserVisible);
+    if (browserVisible && (!browserView || browserView.webContents.isDestroyed())) createBrowserView();
+    if (browserView && !browserView.webContents.isDestroyed()) browserView.setVisible(browserVisible);
     return true;
   });
   ipcMain.handle('browser:set-bounds', (_event, bounds) => {
+    if (!browserView || browserView.webContents.isDestroyed()) createBrowserView();
     const values = ['x', 'y', 'width', 'height'].map((key) => Number(bounds?.[key]));
     if (!values.every(Number.isFinite) || values[2] < 1 || values[3] < 1) {
       throw new Error('Ukuran area browser tidak valid.');
@@ -87,6 +91,7 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle('recording:start', async () => {
+    if (!browserView || browserView.webContents.isDestroyed()) throw new Error('Browser belum dibuka.');
     const currentUrl = browserView.webContents.getURL();
     if (!isAllowedSolitaire(currentUrl)) {
       throw new Error('Perekaman hanya diizinkan pada halaman Solitaire yang ditentukan.');
@@ -125,10 +130,10 @@ function registerIpc() {
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 980,
-    minHeight: 650,
+    width: 1100,
+    height: 720,
+    minWidth: 800,
+    minHeight: 550,
     title: 'GAME Electron Preview v1.5.0',
     backgroundColor: '#0b1220',
     webPreferences: {
@@ -138,15 +143,13 @@ function createWindow() {
       sandbox: true
     }
   });
-  createBrowserView();
-
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) mainWindow.loadURL(devUrl);
   else mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
 
   mainWindow.on('resize', () => {
     // The React layout reports exact browser bounds through the secure preload API.
-    if (!browserVisible) browserView.setVisible(false);
+    if (!browserVisible && browserView && !browserView.webContents.isDestroyed()) browserView.setVisible(false);
   });
   mainWindow.on('closed', () => { mainWindow = null; browserView = null; });
 }
