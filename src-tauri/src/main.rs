@@ -172,6 +172,12 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   };
   let reportedMouseCapture = false;
   let reportedRelay = false;
+  const reportedStages = new Set();
+  const reportDiagnosticOnce = (stage) => {
+    if (reportedStages.has(stage)) return;
+    reportedStages.add(stage);
+    reportDiagnostic(stage);
+  };
   const send = (eventType, data = {}) => {
     const payload = {
       eventType,
@@ -257,7 +263,9 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   // Read the live Solitaire model from Vue's component tree before falling back
   // to DOM selectors. The game board itself is a WebGL canvas, so DOM card
   // selectors cannot describe its tableau.
+  let cachedGameTable = null;
   const findLiveTable = () => {
+    if (cachedGameTable && cachedGameTable.columnContainers) return { table: cachedGameTable, vueRoots: 1 };
     const roots = [];
     const rootSeen = new Set();
     const addRoot = (instance) => {
@@ -282,7 +290,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
         }
       } catch (_) {}
       for (const candidate of candidates) {
-        if (candidate && candidate.columnContainers) { found = candidate; return; }
+        if (candidate && candidate.columnContainers) { found = candidate; cachedGameTable = candidate; return; }
       }
     };
     const walkVNode = (vnode, walkInstance) => {
@@ -367,11 +375,11 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       reportDiagnostic(result.vueRoots > 0 ? 'vue-root-found' : 'vue-root-not-found');
       return null;
     }
-    reportDiagnostic('game-table-found');
+    reportDiagnosticOnce('game-table-found');
     const valuesOf = (collection) => Array.isArray(collection) ? collection : (collection instanceof Map ? Array.from(collection.values()) : Object.values(collection || {}));
     const columns = valuesOf(table.columnContainers);
     if (!columns.length) return null;
-    reportDiagnostic('game-columns-found');
+    reportDiagnosticOnce('game-columns-found');
     const cards = [];
     const appendContainer = (container, slotPrefix) => {
       if (!container || typeof container.getCards !== 'function') return;
@@ -395,8 +403,8 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     houses.forEach((container, index) => appendContainer(container, 'foundation:' + (index + 1)));
     appendContainer(table.deckContainer, 'deck');
     appendContainer(table.baseContainer, 'base');
-    if (!cards.length) { reportDiagnostic('game-cards-unreadable'); return null; }
-    reportDiagnostic('game-cards-found');
+    if (!cards.length) { reportDiagnosticOnce('game-cards-unreadable'); return null; }
+    reportDiagnosticOnce('game-cards-found');
     const signature = cards.map((card) => card.slot + '=' + card.code + (card.faceUp === true ? ':UP' : card.faceUp === false ? ':DOWN' : ':STATE?')).join('|');
     return { cards, signature };
   };
@@ -412,7 +420,7 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
       return;
     }
     const canvas = document.querySelector('canvas.solitaire__canvas');
-    if (canvas) reportDiagnostic('solitaire-canvas-found');
+    if (canvas) reportDiagnosticOnce('solitaire-canvas-found');
     const selector = '[data-card],[data-rank],[class*="card" i],[aria-label*="card" i],img[src*="card" i]';
     const rawNodes = Array.from(document.querySelectorAll(selector)).filter((node) => node instanceof HTMLElement);
     const candidates = [];
@@ -526,6 +534,8 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     if (!event.data || event.data.type !== 'GAME_MANUAL_START_RECORDING') return;
     reportDiagnostic('start-received');
     if (!started) {
+      reportedStages.clear();
+      cachedGameTable = null;
       started = true;
       startBoardObserver();
       scheduleBoardCapture(350);
