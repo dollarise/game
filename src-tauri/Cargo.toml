@@ -1,6 +1,6 @@
 [package]
 name = "game-desktop"
-version = "1.4.7"
+version = "1.4.8"
 description = "GAME desktop workspace"
 authors = ["Dollarise"]
 edition = "2021"
