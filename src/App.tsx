@@ -271,6 +271,7 @@ export default function App() {
       if (result.browser_error) throw new Error(result.browser_error);
       beginRecordingSession('Perekaman dimulai. Silakan mainkan Solitaire.');
       setRecordingDiagnostics(result.stages);
+      void invoke('recording_snapshot').catch((error) => ping('Snapshot papan awal gagal: ' + String(error)));
     } catch (error) {
       ping('Gagal memulai perekaman. Pastikan halaman Solitaire sudah terbuka: ' + String(error));
     } finally {
@@ -346,6 +347,7 @@ export default function App() {
         beginRecordingSession(event.payload.reason === 'play-start'
           ? 'Tombol Play / Start Game ditekan. Perekaman otomatis dimulai.'
           : 'Perekaman otomatis dimulai.');
+        void invoke('recording_snapshot').catch((error) => ping('Snapshot papan awal gagal: ' + String(error)));
       }
     }).then((stop) => { if (active) unlisten = stop; else stop(); });
     let unlistenStop: (() => void) | undefined;
