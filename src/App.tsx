@@ -266,18 +266,13 @@ export default function App() {
     }
     if (recordingStatus !== 'waiting') return;
     setStartingRecording(true);
-    // Start the clock immediately on the UI thread. Do not make the timer
-    // depend on the WebView2 command/event round-trip, which can be delayed.
-    beginRecordingSession('Timer rekaman berjalan. Silakan mainkan Solitaire.');
     try {
       const result = await invoke<RecordingStartResult>('browser_start_recording');
+      if (result.browser_error) throw new Error(result.browser_error);
+      beginRecordingSession('Perekaman dimulai. Silakan mainkan Solitaire.');
       setRecordingDiagnostics(result.stages);
-      if (result.browser_error) ping('Perintah Rekam diterima aplikasi, tetapi gagal diteruskan ke browser: ' + result.browser_error);
     } catch (error) {
-      // Keep the app-owned session and timer alive. A WebView bridge failure
-      // must not silently cancel a session the user explicitly started.
-      // Surface the capture error so it can be diagnosed without losing time.
-      ping('Sesi rekaman tetap berjalan, tetapi koneksi perekam mouse gagal: ' + String(error));
+      ping('Gagal memulai perekaman. Pastikan halaman Solitaire sudah terbuka: ' + String(error));
     } finally {
       setStartingRecording(false);
     }
@@ -346,10 +341,18 @@ export default function App() {
   useEffect(() => {
     let active = true;
     let unlisten: (() => void) | undefined;
+    void listen<{ reason: string }>('recording-auto-start', (event) => {
+      if (active && !recordingSessionActive.current && recordingStatus === 'waiting') {
+        beginRecordingSession(event.payload.reason === 'play-start'
+          ? 'Tombol Play / Start Game ditekan. Perekaman otomatis dimulai.'
+          : 'Perekaman otomatis dimulai.');
+      }
+    }).then((stop) => { if (active) unlisten = stop; else stop(); });
+    let unlistenStop: (() => void) | undefined;
     void listen<{ status: 'incomplete'; reason: string }>('recording-auto-stop', () => {
       if (active) void stopRecording('incomplete');
-    }).then((stop) => { if (active) unlisten = stop; else stop(); });
-    return () => { active = false; unlisten?.(); };
+    }).then((stop) => { if (active) unlistenStop = stop; else stop(); });
+    return () => { active = false; unlisten?.(); unlistenStop?.(); };
   }, []);
 
   async function signOut() {
