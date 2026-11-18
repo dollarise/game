@@ -1,46 +1,54 @@
-# Game — Website Workspace
+# GAME Desktop
 
-A browser workspace with two sections: **Rekam** and **Buka Data**. Users sign in with email and password. Only the Super Admin creates accounts manually in Supabase Auth; public self-registration is not part of the app. Each user's target website setting and saved records are isolated by Supabase Row Level Security.
+GAME is a Windows desktop workspace built with **Electron + Chromium**, React, TypeScript, and Supabase.
 
-## Features
+## Preserved account features
 
-- Email/password sign-in, password reset, and sign-out; accounts are created manually by the Super Admin
-- Configurable target website URL (default: https://1xlite-6487.com/)
-- Record and manage saved website addresses
-- Per-user settings and records protected by Supabase RLS
-- Responsive Vite + React + TypeScript interface
+- Email/password sign-in and password reset through Supabase Auth
+- Accounts remain managed by the Super Admin; public self-registration is not enabled
+- Per-user settings and saved recordings remain stored in Supabase with Row Level Security
+- Browser, Buka Data, and Manajemen Pengguna screens remain part of the workspace
+
+## Desktop architecture
+
+- Electron owns the desktop window and embeds a Chromium `WebContentsView`
+- The target website is rendered inside the GAME window; it does not launch the user's external Chrome
+- The renderer communicates with Electron through a restricted preload bridge
+- Context isolation is enabled and Node integration is disabled
+- Chromium DevTools Protocol is used to install input capture in the game page and its child frames
+- The web deployment remains a Vite/React site and uses its web browser frame; the Electron browser is desktop-only
+
+## Recording controls
+
+- **Rekam** starts a GAME-owned recording session
+- **Jeda** suspends event capture and pauses the timer
+- **Lanjutkan** resumes capture and timing
+- **Stop** ends the session and saves it to Buka Data
+- Solitaire's Give up action is treated as an incomplete session
+
+Recording accuracy must be validated against the live Solitaire page, including click, drag, board changes, pause/resume, and auto-stop behavior. A successful installer build alone is not proof that event capture is correct.
 
 ## Local development
 
-```bash
-npm install
-cp .env.example .env.local
-npm run dev
-```
-
-Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (Supabase publishable/anon key) in `.env.local`.
-
-## Supabase Auth configuration
-
-Enable the Email provider in Supabase Authentication and disable public sign-ups (Authentication → Settings → User Signups → turn off “Allow new users to sign up”). The Super Admin creates users manually from Authentication → Users using the Supabase dashboard. Add the local and deployed app URLs to Supabase Auth URL Configuration (Site URL and Redirect URLs) so password reset links can return to the app. Add the local and deployed app URLs to Supabase Auth URL Configuration (Site URL and Redirect URLs) so password reset links can return to the app.
-
-## Desktop application (Windows)
-
-The Windows desktop build uses Tauri 2 with the system Microsoft Edge WebView2 runtime. The Rekam panel is a native child WebView2 surface, so sites that block iframe embedding can still open inside the GAME desktop window. The Cloudflare Pages build remains the web version and uses an iframe, subject to the target site's frame policy.
-
-Low-memory design:
-
-- The desktop shell uses the Windows WebView2 runtime instead of bundling a separate Chromium browser.
-- The target-site browser is created lazily and reuses one WebView instance.
-- The browser view is hidden when the user leaves Rekam or opens settings.
-- The installer downloads the small WebView2 bootstrapper only when the runtime is missing; it does not bundle a second browser runtime.
-
-To build on Windows with Rust and the Microsoft C++ Build Tools installed:
+Install Node.js 22 or newer, then run:
 
 ```bash
 npm install
 npm run desktop:dev
+```
+
+For the web interface only:
+
+```bash
+npm run dev
+```
+
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env.local` when running locally.
+
+## Windows installer
+
+```bash
 npm run desktop:build
 ```
 
-GitHub Actions also builds a Windows NSIS installer and uploads it as the `GAME-Windows-Installer` workflow artifact.
+The NSIS installer is written to `release/`. GitHub Actions also builds and uploads the Windows installer artifact.
