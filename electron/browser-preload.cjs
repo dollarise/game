@@ -19,7 +19,7 @@ window.addEventListener('message', (event) => {
 
   if (message.type !== 'GAME_ELECTRON_RECORDING_EVENT_TO_NATIVE') return;
   const payload = message.payload;
-  if (!payload || !['move', 'click', 'board'].includes(payload.eventType)) return;
+  if (!payload || !['click', 'board'].includes(payload.eventType)) return;
 
   ipcRenderer.send('browser:recording-event', {
     eventType: payload.eventType,
