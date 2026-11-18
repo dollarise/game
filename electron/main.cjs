@@ -105,7 +105,7 @@ function registerIpc() {
 
   ipcMain.on('browser:recording-diagnostic', (event, stage) => {
     if (event.sender !== browserView.webContents) return;
-    const allowed = ['native-start-command', 'start-message-sent', 'start-received', 'iframe-start-sent', 'mouse-captured', 'iframe-event-relayed', 'board-elements-not-found', 'board-cards-detected', 'board-snapshot-captured'];
+    const allowed = ['native-start-command', 'start-message-sent', 'start-received', 'iframe-start-sent', 'mouse-captured', 'iframe-event-relayed', 'board-elements-not-found', 'board-cards-detected', 'board-snapshot-captured', 'game-api-board-captured'];
     if (!allowed.includes(stage)) return;
     sendToUi('recording:diagnostic', { stage });
   });
