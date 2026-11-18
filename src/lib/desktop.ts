@@ -9,7 +9,7 @@ declare global {
   interface Window { gameDesktop?: GameDesktopBridge; }
 }
 
-export function isTauri(): boolean {
+export function isDesktop(): boolean {
   return Boolean(window.gameDesktop?.isDesktop);
 }
 
