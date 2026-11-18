@@ -134,7 +134,7 @@ function createWindow() {
     height: 720,
     minWidth: 800,
     minHeight: 550,
-    title: 'GAME Electron Preview v1.5.0',
+    title: 'GAME Electron Preview v1.5.3',
     backgroundColor: '#0b1220',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
