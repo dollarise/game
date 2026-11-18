@@ -28,6 +28,24 @@ function validUrl(value: string) {
   catch { return false; }
 }
 
+async function createUniqueRecordingTitle(userId: string, recordedAt: string) {
+  if (!db) throw new Error('Database belum tersedia.');
+  const dateLabel = new Date(recordedAt).toLocaleDateString('id-ID', {
+    day: '2-digit', month: '2-digit', year: 'numeric'
+  });
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const random = new Uint32Array(1);
+    window.crypto.getRandomValues(random);
+    const number = String(100000 + (random[0] % 900000));
+    const title = number + ' - ' + dateLabel;
+    const { data, error } = await db.from('game_mouse_recordings')
+      .select('id').eq('user_id', userId).eq('title', title).maybeSingle();
+    if (error) throw error;
+    if (!data) return title;
+  }
+  throw new Error('Tidak berhasil membuat nomor rekaman unik. Silakan coba Stop kembali.');
+}
+
 function formatDuration(milliseconds: number) {
   const total = Math.floor(Math.max(0, milliseconds) / 1000);
   const hours = Math.floor(total / 3600);
