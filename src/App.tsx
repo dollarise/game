@@ -192,9 +192,8 @@ export default function App() {
       recordingEventsRef.current = nextEvents;
       setRecordingEvents(nextEvents);
     }).then((stop) => { if (active) unlistenInput = stop; else stop(); });
-    // Web game events must never end a recording session. Only the app's
-    // explicit Stop button is allowed to save and close the active session.
-    return () => { active = false; unlistenStart?.(); unlistenInput?.(); };
+    // The game page supplies mouse data only; recording controls stay in GAME.
+    return () => { active = false; unlistenInput?.(); };
   }, []);
 
   const filteredRecords = useMemo(() => records.filter((item) =>
@@ -293,8 +292,6 @@ export default function App() {
   async function stopRecording(status?: 'completed' | 'incomplete') {
     if (status) recordingSaveStatusRef.current = status;
     const saveStatus = recordingSaveStatusRef.current;
-    // Auto Build / Give up listeners are registered once, so their callback can
-    // retain the first render's state. Use refs for the live session/save guards.
     if (!db || !session || !recordingSessionActive.current || savingRecordRef.current) return;
     if (recordingStartedAt.current !== null) {
       accumulatedMs.current += Date.now() - recordingStartedAt.current;
