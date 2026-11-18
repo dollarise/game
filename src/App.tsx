@@ -372,7 +372,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Rekam langkah dan kondisi Solitaire</span></div></div>
           <button className="settings-link" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={17}/> Pengaturan <ChevronDown size={15}/></button>
-          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.3.1</span></div>
+          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.3.3</span></div>
         </div>
       </aside>
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
@@ -385,7 +385,7 @@ export default function App() {
           {section === 'browser' ? (
             <BrowserFrame url={targetUrl} onNavigate={navigateTarget} suspend={settingsOpen}
               recordingStatus={recordingStatus} elapsedMs={elapsedMs} eventCount={recordingEvents.length}
-              savingRecord={savingRecord} onStart={() => void startManualRecording()} onPause={pauseRecording} onResume={resumeRecording} onStop={() => void stopRecording()} />
+              savingRecord={savingRecord} startingRecording={startingRecording} onStart={() => void startManualRecording()} onPause={pauseRecording} onResume={resumeRecording} onStop={() => void stopRecording()} />
           ) : section === 'data' ? (
             <>
               <div className="page-heading"><div><div className="eyebrow"><HardDrive size={14}/> DATA CENTER</div><h1>Buka Data</h1><p>Riwayat kondisi papan, langkah permainan, dan aktivitas mouse Solitaire.</p></div><button className="button button-primary" onClick={() => { setSection('browser'); setMobileNav(false); }}><Plus size={16}/> Kembali ke Rekam</button></div>
@@ -485,9 +485,9 @@ function AdminPanel({ db, session, ping }: { db: SupabaseClient; session: Sessio
   </section>;
 }
 
-function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, eventCount, savingRecord, onStart, onPause, onResume, onStop }: {
+function BrowserFrame({ url, onNavigate, suspend, recordingStatus, elapsedMs, eventCount, savingRecord, startingRecording, onStart, onPause, onResume, onStop }: {
   url: string; onNavigate: (url: string) => void; suspend: boolean;
-  recordingStatus: 'waiting' | 'recording' | 'paused'; elapsedMs: number; eventCount: number; savingRecord: boolean; onStart: () => void;
+  recordingStatus: 'waiting' | 'recording' | 'paused'; elapsedMs: number; eventCount: number; savingRecord: boolean; startingRecording: boolean; onStart: () => void;
   onPause: () => void; onResume: () => void; onStop: () => void;
 }) {
   const desktop = isTauri();
