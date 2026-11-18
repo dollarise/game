@@ -343,7 +343,7 @@ export default function App() {
     let active = true;
     let unlisten: (() => void) | undefined;
     void listen<{ reason: string }>('recording-auto-start', (event) => {
-      if (active && !recordingSessionActive.current && recordingStatus === 'waiting') {
+      if (active && !recordingSessionActive.current) {
         beginRecordingSession(event.payload.reason === 'play-start'
           ? 'Tombol Play / Start Game ditekan. Perekaman otomatis dimulai.'
           : 'Perekaman otomatis dimulai.');
