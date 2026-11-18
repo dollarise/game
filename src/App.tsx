@@ -549,7 +549,9 @@ function BrowserFrame({ url, onNavigate, suspend, recordingStatus, diagnostics }
       setAddress(nextUrl);
       setCurrentUrl(nextUrl);
       lastPropUrl.current = nextUrl;
-      onNavigate(nextUrl);
+      // Page redirects and in-game routes are runtime navigation only.
+      // Keep the account's saved launch URL unchanged; explicit address-bar
+      // navigation still persists through navigate() -> onNavigate().
     }).then((stop) => { if (active) unlisten = stop; else stop(); });
     return () => { active = false; unlisten?.(); };
   }, [desktop]);
