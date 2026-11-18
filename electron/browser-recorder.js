@@ -7,6 +7,7 @@
   let lastMoveAt = 0;
   let lastX = -10000;
   let lastY = -10000;
+  let reportedMouseCapture = false;
   const isTopFrame = window.top === window;
 
   const relay = (eventType, event, label = null) => {
@@ -49,6 +50,7 @@
     window.addEventListener('message', (event) => {
       if (event.data?.type !== 'GAME_MANUAL_START_RECORDING') return;
       recording = true;
+      try { window.postMessage({ type: 'GAME_MOUSE_RECORDING_DIAGNOSTIC', stage: 'start-received' }, '*'); } catch (_) {}
       observeFrames();
     });
     observeFrames();
@@ -60,6 +62,10 @@
 
   document.addEventListener('pointerdown', (event) => {
     if (!recording || !event.isTrusted) return;
+    if (!reportedMouseCapture) {
+      reportedMouseCapture = true;
+      try { window.top.postMessage({ type: 'GAME_MOUSE_RECORDING_DIAGNOSTIC', stage: 'mouse-captured' }, '*'); } catch (_) {}
+    }
     if (event.button === 0) dragStart = { x: event.clientX, y: event.clientY };
     relay('click', event, event.button === 0 ? 'Tekan area permainan' : 'Klik area permainan');
   }, { capture: true, passive: true });
