@@ -28,6 +28,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Validate Electron main and preload syntax
+        run: |
+          node --check electron/main.cjs
+          node --check electron/preload.cjs
+
       - name: Build GAME Electron Windows installer
         run: npm run desktop:build
 
