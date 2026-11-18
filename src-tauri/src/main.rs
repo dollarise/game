@@ -375,22 +375,22 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     }
     observeAndStartFrames();
   });
-  // Game buttons and their text have no control meaning in GAME.
-  // While a session is active, capture only genuine mouse input as data.
-  document.addEventListener('click', (event) => {
-    if (!started || !event.isTrusted) return;
-    const cardLabel = cardLabelOf(event.target);
-    const label = cardLabel ? 'Klik ' + cardLabel : 'Klik area permainan';
-    const input = { x: event.clientX, y: event.clientY, button: event.button, label };
-    if (Date.now() >= suppressClickUntil) {
-      void send('click', input).then(() => scheduleBoardCapture(350));
-    }
-  }, true);
+  // Capture at pointerdown rather than waiting for click: some game canvases
+  // prevent the synthetic click event or keep pointer capture during a drag.
+  // This records the user's actual press immediately, including taps on cards.
   document.addEventListener('pointerdown', (event) => {
-    if (!started) return;
+    if (!started || !event.isTrusted) return;
     const target = event.target;
+    const cardLabel = cardLabelOf(target);
     if (event.button === 0) {
-      dragStart = { x: event.clientX, y: event.clientY, card: cardLabelOf(target) };
+      dragStart = { x: event.clientX, y: event.clientY, card: cardLabel };
+      void send('click', {
+        x: event.clientX,
+        y: event.clientY,
+        button: event.button,
+        label: cardLabel ? 'Tekan ' + cardLabel : 'Tekan area permainan'
+      });
+      if (!reportedMouseCapture) { reportedMouseCapture = true; reportDiagnostic('mouse-captured'); }
       return;
     }
     const control = target instanceof Element ? target.closest('button,[role="button"],a,[tabindex]') : null;
