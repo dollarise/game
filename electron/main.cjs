@@ -8,6 +8,7 @@ const ALLOWED_GAME_HOSTS = new Set(['1xlite-6487.com', '1xlite-7498.com']);
 let mainWindow;
 let gameView;
 let recordingActive = false;
+let recordingPaused = false;
 let captureInstalled = false;
 let captureMessageListenerAttached = false;
 let scriptIdentifier = null;
@@ -164,7 +165,7 @@ function attachCapture() {
       try { payload = JSON.parse(params.payload); } catch { return; }
       if (!payload || typeof payload.type !== 'string') return;
       if (payload.type === 'auto-start') {
-        if (!recordingActive) {
+        if (!recordingActive && !recordingPaused) {
           recordingActive = true;
           sendToApp('recording-auto-start', { reason: payload.reason || 'play-start' });
         }
@@ -260,6 +261,7 @@ function createWindow() {
     sendToApp('browser-url-changed', url);
     if (recordingActive && !isAllowedRecordingPage(url)) {
       recordingActive = false;
+      recordingPaused = false;
       sendToApp('recording-auto-stop', { status: 'incomplete', reason: 'left-game-page' });
     }
   };
@@ -281,6 +283,7 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     recordingActive = false;
+    recordingPaused = false;
     if (gameView && !gameView.webContents.isDestroyed()) gameView.webContents.close();
     captureInstalled = false;
     gameView = null;
@@ -323,16 +326,18 @@ ipcMain.handle('game:invoke', async (event, command, args = {}) => {
       if (!isAllowedRecordingPage(current)) throw new Error('Perekaman hanya diizinkan pada halaman Solitaire yang ditentukan.');
       await attachCapture();
       recordingActive = true;
+      recordingPaused = false;
       return { stages: ['electron-start-command', 'chromium-cdp-attached', 'capture-script-injected'], browser_error: null };
     }
     case 'recording_snapshot': await captureCurrentBoards(); return null;
-    case 'recording_pause': recordingActive = false; return null;
+    case 'recording_pause': recordingActive = false; recordingPaused = true; return null;
     case 'recording_resume': {
       if (!isAllowedRecordingPage(wc.getURL())) throw new Error('Halaman Solitaire tidak aktif.');
       recordingActive = true;
+      recordingPaused = false;
       return null;
     }
-    case 'recording_stop': recordingActive = false; return null;
+    case 'recording_stop': recordingActive = false; recordingPaused = false; return null;
     default: throw new Error('Perintah desktop tidak dikenal: ' + String(command));
   }
 });
@@ -344,5 +349,6 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   recordingActive = false;
+  recordingPaused = false;
   if (process.platform !== 'darwin') app.quit();
 });
