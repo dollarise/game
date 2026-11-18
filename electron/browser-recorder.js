@@ -92,6 +92,9 @@
   let lastBoardSignature = '';
   let boardCaptureTimer = 0;
   let boardObserver = null;
+  let reportedBoardCandidates = false;
+  let reportedNoBoardElements = false;
+  let reportedBoardSnapshot = false;
   const startBoardObserver = () => {
     if (boardObserver || !document.documentElement) return;
     boardObserver = new MutationObserver(() => scheduleBoardCapture(260));
@@ -161,7 +164,11 @@
       if (!code && !faceDown && !cardLike && !genericVisual) continue;
       candidates.push({ root, rect, raw, visualId, code: faceDown ? 'BACK' : (code || 'UNKNOWN'), faceUp: !faceDown });
     }
-    if (!candidates.length) return;
+    if (!candidates.length) {
+      if (!reportedNoBoardElements) { reportedNoBoardElements = true; reportDiagnostic('board-elements-not-found'); }
+      return;
+    }
+    if (!reportedBoardCandidates) { reportedBoardCandidates = true; reportDiagnostic('board-cards-detected'); }
 
     // Build logical pile/stack positions from the board's relative geometry,
     // not from raw screen pixels. Keep top-row piles separate from tableau.
@@ -211,6 +218,7 @@
     const signature = cards.map((card) => card.slot + '=' + card.code + (card.faceUp ? ':' + (card.visualId || 'UP') : ':DOWN')).join('|');
     if (!signature || signature === lastBoardSignature) return;
     lastBoardSignature = signature;
+    if (!reportedBoardSnapshot) { reportedBoardSnapshot = true; reportDiagnostic('board-snapshot-captured'); }
     return send('board', { label: JSON.stringify({ cards, signature }) });
   };
   const scheduleBoardCapture = (delay = 300) => {
