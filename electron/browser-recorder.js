@@ -86,6 +86,99 @@
     const match = description.match(/(?:^|\b)(ace|king|queen|jack|10|[2-9]|[AJQK])\s*(?:of\s*)?(spades?|hearts?|diamonds?|clubs?|♠|♥|♦|♣)(?:\b|$)/i);
     return match ? 'kartu ' + match[0].trim() : 'kartu (identitas belum terbaca)';
   };
+  // Solitaire is rendered by PixiJS/WebGL into a Canvas. DOM scanning cannot
+  // inspect those cards, so also observe the game's structured GetActiveGame response.
+  // Only normalized card state is forwarded; request URLs, headers and tokens are never sent.
+  let lastApiSnapshot = null;
+  let lastApiSignature = '';
+  const apiCardCode = (card) => {
+    const suit = ({ 0: 'S', 1: 'C', 2: 'D', 3: 'H' })[Number(card?.CardSuit)];
+    const value = Number(card?.CardValue);
+    const rank = value === 14 ? 'A' : value === 13 ? 'K' : value === 12 ? 'Q' : value === 11 ? 'J' : String(value);
+    return suit && /^(?:[2-9]|10|J|Q|K|A)$/.test(rank) ? rank + suit : 'UNKNOWN';
+  };
+  const snapshotFromGameSit = (gameSit) => {
+    if (!gameSit || typeof gameSit !== 'object') return null;
+    const cards = [];
+    const addPile = (pile, faceCards, totalCount) => {
+      const faces = Array.isArray(faceCards) ? faceCards : [];
+      const count = Number.isFinite(Number(totalCount)) ? Math.max(faces.length, Number(totalCount)) : faces.length;
+      const hidden = Math.max(0, count - faces.length);
+      for (let index = 0; index < hidden; index += 1) {
+        cards.push({ code: 'BACK', faceUp: false, slot: pile + ':' + String(index + 1).padStart(2, '0') });
+      }
+      faces.forEach((card, index) => {
+        cards.push({ code: apiCardCode(card), faceUp: true, slot: pile + ':' + String(hidden + index + 1).padStart(2, '0') });
+      });
+    };
+    for (let column = 1; column <= 7; column += 1) {
+      addPile('tableau:column-' + column, gameSit['Column' + column + 'Face'], gameSit['Column' + column + 'Count']);
+    }
+    addPile('foundation:spades', gameSit.HouseSpades, gameSit.HouseSpades?.length);
+    addPile('foundation:clubs', gameSit.HouseClubs, gameSit.HouseClubs?.length);
+    addPile('foundation:diamonds', gameSit.HouseDiamonds, gameSit.HouseDiamonds?.length);
+    addPile('foundation:hearts', gameSit.HouseHearts, gameSit.HouseHearts?.length);
+    addPile('stock:closed', gameSit.DeckShirtFace, gameSit.DeckShirtCount);
+    addPile('waste:open', gameSit.DeckFace, gameSit.DeckFace?.length);
+    if (!cards.length) return null;
+    const signature = cards.map((card) =>
+      card.slot + '=' + card.code + (card.faceUp ? ':UP' : ':DOWN')
+    ).join('|');
+    return { cards, signature, source: 'game-api' };
+  };
+  const snapshotFromApiPayload = (payload) => {
+    const gameSit = payload?.data?.RS?.GameSit || payload?.RS?.GameSit || payload?.data?.GameSit;
+    return snapshotFromGameSit(gameSit);
+  };
+  const emitApiSnapshot = (snapshot, force = false) => {
+    if (!snapshot) return;
+    lastApiSnapshot = snapshot;
+    if (!started || (!force && snapshot.signature === lastApiSignature)) return;
+    lastApiSignature = snapshot.signature;
+    if (!reportedApiBoard) {
+      reportedApiBoard = true;
+      reportDiagnostic('game-api-board-captured');
+    }
+    void send('board', { label: JSON.stringify(snapshot) });
+  };
+  let reportedApiBoard = false;
+  const inspectApiResponse = (url, payload) => {
+    if (!/GetActiveGame/i.test(String(url || ''))) return;
+    const snapshot = snapshotFromApiPayload(payload);
+    if (snapshot) emitApiSnapshot(snapshot);
+  };
+  if (typeof window.fetch === 'function') {
+    const originalFetch = window.fetch;
+    window.fetch = function (...args) {
+      return originalFetch.apply(this, args).then((response) => {
+        const requestUrl = typeof args[0] === 'string' ? args[0] : args[0]?.url;
+        if (/GetActiveGame/i.test(String(requestUrl || ''))) {
+          response.clone().json().then((payload) => inspectApiResponse(requestUrl, payload)).catch(() => {});
+        }
+        return response;
+      });
+    };
+  }
+  if (typeof window.XMLHttpRequest === 'function') {
+    const originalOpen = window.XMLHttpRequest.prototype.open;
+    const originalSend = window.XMLHttpRequest.prototype.send;
+    window.XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+      this.__gameRecordingRequestUrl = String(url || '');
+      return originalOpen.call(this, method, url, ...rest);
+    };
+    window.XMLHttpRequest.prototype.send = function (...args) {
+      if (/GetActiveGame/i.test(this.__gameRecordingRequestUrl || '')) {
+        this.addEventListener('load', () => {
+          try {
+            const payload = this.responseType === 'json' ? this.response : JSON.parse(this.responseText);
+            inspectApiResponse(this.__gameRecordingRequestUrl, payload);
+          } catch (_) {}
+        }, { once: true });
+      }
+      return originalSend.apply(this, args);
+    };
+  }
+
   let lastBoardSignature = '';
   let boardCaptureTimer = 0;
   let boardObserver = null;
@@ -260,6 +353,7 @@
     reportDiagnostic('start-received');
     if (!started) {
       started = true;
+      if (lastApiSnapshot) emitApiSnapshot(lastApiSnapshot, true);
       startBoardObserver();
       scheduleBoardCapture(350);
     }
