@@ -111,8 +111,8 @@
       root.getAttribute('alt'), root.getAttribute('src'), root.textContent,
       style.backgroundImage, style.backgroundPosition, style.backgroundSize,
       ...descendants.flatMap((item) => [item.currentSrc, item.getAttribute('src'), item.getAttribute('data-src'), item.getAttribute('alt'), item.getAttribute('title'), item.getAttribute('data-rank'), item.getAttribute('data-suit')])
-    ].filter(Boolean).join('|').replace(/\\s+/g, ' ').trim().slice(0, 1200);
-    if (!parts || !/(?:https?:|data:image|url\\(|data-card|data-rank|data-suit)/i.test(parts)) return '';
+    ].filter(Boolean).join('|').replace(/\s+/g, ' ').trim().slice(0, 1200);
+    if (!parts || !/(?:https?:|data:image|url\(|data-card|data-rank|data-suit|\.(?:png|jpe?g|webp|svg)(?:[?#]|$))/i.test(parts)) return '';
     let hash = 2166136261;
     for (let index = 0; index < parts.length; index += 1) { hash ^= parts.charCodeAt(index); hash = Math.imul(hash, 16777619); }
     return 'visual-' + (hash >>> 0).toString(16);
