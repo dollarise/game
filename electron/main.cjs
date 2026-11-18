@@ -27,7 +27,8 @@ const CAPTURE_SCRIPT = String.raw`(() => {
     return [
       node.textContent, node.getAttribute('aria-label'), node.getAttribute('title'),
       node.getAttribute('data-testid'), node.getAttribute('data-card'),
-      node.getAttribute('data-rank'), node.getAttribute('data-suit'), node.getAttribute('alt')
+      node.getAttribute('data-rank'), node.getAttribute('data-suit'), node.getAttribute('alt'),
+      node.getAttribute('src'), node.getAttribute('class'), node.getAttribute('style')
     ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 180);
   };
   let lastMoveAt = 0;
