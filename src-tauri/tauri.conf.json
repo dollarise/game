@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "GAME",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "identifier": "com.dollarise.game",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "GAME V1.4.1",
+        "title": "GAME V1.4.2",
         "width": 1360,
         "height": 900,
         "minWidth": 900,
