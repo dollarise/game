@@ -269,14 +269,21 @@ export default function App() {
     }
     if (recordingStatus !== 'waiting') return;
     setStartingRecording(true);
+    // Start the clock immediately on the UI thread. Do not make the timer
+    // depend on the WebView2 command/event round-trip, which can be delayed.
+    beginRecordingSession('Timer rekaman berjalan. Silakan mainkan Solitaire.');
     try {
-      // Start the React session directly after the native command succeeds.
-      // This avoids depending only on an asynchronously registered Tauri
-      // event listener to update the Rekam controls.
       await invoke('browser_start_recording');
-      beginRecordingSession('Rekaman manual dimulai. Silakan mainkan Solitaire.');
     } catch (error) {
-      ping('Tidak dapat memulai rekaman manual: ' + String(error));
+      // Roll back the session if the native browser rejected the start request.
+      recordingSessionActive.current = false;
+      recordingStartedAt.current = null;
+      accumulatedMs.current = 0;
+      recordingEventsRef.current = [];
+      setRecordingEvents([]);
+      setRecordingStatus('waiting');
+      setElapsedMs(0);
+      ping('Browser gagal memulai perekaman: ' + String(error));
     } finally {
       setStartingRecording(false);
     }
