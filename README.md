@@ -20,7 +20,9 @@ GAME is a Windows desktop workspace built with **Electron + Chromium**, React, T
 
 ## Recording controls
 
-- **Rekam** starts a GAME-owned recording session
+- Clicking Solitaire **Play / Start Game** starts recording automatically
+- The sidebar **Rekam** button remains available as a manual fallback
+- **Rekam** starts a GAME-owned recording session when automatic start is not used
 - **Jeda** suspends event capture and pauses the timer
 - **Lanjutkan** resumes capture and timing
 - **Stop** ends the session and saves it to Buka Data
