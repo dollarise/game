@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 
 type Section = 'browser' | 'data' | 'admin';
+type RecordingStartResult = { stages: string[]; browser_error: string | null };
 type MouseEventData = { type: 'move' | 'click' | 'board' | 'game_step'; x: number; y: number; button?: number; elapsed_ms: number; label?: string };
 type PatternAlert = { status: 'completed' | 'incomplete'; title: string; cards: BoardCard[]; steps: string[]; certainty: 'exact' | 'partial' };
 type SavedRecord = { id: string; title: string; duration_ms: number; event_count: number; status: 'completed' | 'incomplete'; events?: MouseEventData[]; recorded_at: string };
@@ -270,7 +271,9 @@ export default function App() {
     // depend on the WebView2 command/event round-trip, which can be delayed.
     beginRecordingSession('Timer rekaman berjalan. Silakan mainkan Solitaire.');
     try {
-      await invoke('browser_start_recording');
+      const result = await invoke<RecordingStartResult>('browser_start_recording');
+      setRecordingDiagnostics(result.stages);
+      if (result.browser_error) ping('Perintah Rekam diterima aplikasi, tetapi gagal diteruskan ke browser: ' + result.browser_error);
     } catch (error) {
       // Keep the app-owned session and timer alive. A WebView bridge failure
       // must not silently cancel a session the user explicitly started.
@@ -361,7 +364,7 @@ export default function App() {
         <div className="sidebar-bottom">
           <div className="secure-card"><div className="secure-icon"><ShieldCheck size={17}/></div><div><b>Workspace browser</b><span>Rekam langkah dan kondisi Solitaire</span></div></div>
           <button className="settings-link" onClick={() => { setUrlDraft(targetUrl); setSettingsOpen(true); }}><Settings2 size={17}/> Pengaturan <ChevronDown size={15}/></button>
-          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.4.0</span></div>
+          <div className="sidebar-foot"><span className="status-dot"/>{db ? 'Supabase terhubung' : 'Mode penyimpanan lokal'}<span className="version">v1.4.8</span></div>
         </div>
       </aside>
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Tutup navigasi"/>}
