@@ -98,7 +98,7 @@ struct RecordingStartResult { stages: Vec<String>, browser_error: Option<String>
 #[tauri::command]
 fn recording_diagnostic(webview: Webview, app: AppHandle, stage: String) -> Result<(), String> {
     if webview.label() != "game-browser" { return Err("Diagnosis hanya diterima dari browser GAME.".to_string()); }
-    let allowed = ["native-start-command", "start-message-sent", "start-received", "iframe-start-sent", "mouse-captured", "iframe-event-relayed"];
+    let allowed = ["native-start-command", "start-message-sent", "start-received", "iframe-start-sent", "mouse-captured", "iframe-event-relayed", "solitaire-canvas-found", "vue-root-found", "vue-root-not-found", "game-table-found", "game-columns-found", "game-cards-found", "game-cards-unreadable"];
     if !allowed.contains(&stage.as_str()) { return Err("Tahap diagnosis tidak dikenal.".to_string()); }
     app.emit("recording-diagnostic", RecordingDiagnostic { stage }).map_err(|error| error.to_string())
 }
@@ -172,6 +172,12 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   };
   let reportedMouseCapture = false;
   let reportedRelay = false;
+  const reportedStages = new Set();
+  const reportDiagnosticOnce = (stage) => {
+    if (reportedStages.has(stage)) return;
+    reportedStages.add(stage);
+    reportDiagnostic(stage);
+  };
   const send = (eventType, data = {}) => {
     const payload = {
       eventType,
@@ -254,8 +260,167 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     if (fileCode) return fileCode[1].toUpperCase() + fileCode[2].toUpperCase();
     return '';
   };
+  // Read the live Solitaire model from Vue's component tree before falling back
+  // to DOM selectors. The game board itself is a WebGL canvas, so DOM card
+  // selectors cannot describe its tableau.
+  let cachedGameTable = null;
+  const findLiveTable = () => {
+    if (cachedGameTable && cachedGameTable.columnContainers) return { table: cachedGameTable, vueRoots: 1 };
+    const roots = [];
+    const rootSeen = new Set();
+    const addRoot = (instance) => {
+      if (instance && !rootSeen.has(instance)) { rootSeen.add(instance); roots.push(instance); }
+    };
+    for (const element of Array.from(document.querySelectorAll('*'))) {
+      try {
+        addRoot(element.__vue_app__ && element.__vue_app__._instance);
+        addRoot(element.__vueParentComponent);
+      } catch (_) {}
+    }
+    const visited = new Set();
+    let found = null;
+    const inspect = (value) => {
+      if (!value || typeof value !== 'object' || found) return;
+      const candidates = [value.table, value.game && value.game.table, value.$ && value.$.table, value.$ && value.$.game && value.$.game.table, value.$refs && value.$refs.game && value.$refs.game.table];
+      try {
+        for (const key of Object.keys(value)) {
+          const nested = value[key];
+          if (!nested || typeof nested !== 'object') continue;
+          candidates.push(nested, nested.table, nested.game && nested.game.table);
+        }
+      } catch (_) {}
+      for (const candidate of candidates) {
+        if (candidate && candidate.columnContainers) { found = candidate; cachedGameTable = candidate; return; }
+      }
+    };
+    const walkVNode = (vnode, walkInstance) => {
+      if (!vnode || found) return;
+      if (vnode.component) walkInstance(vnode.component);
+      if (Array.isArray(vnode.children)) for (const child of vnode.children) walkVNode(child, walkInstance);
+    };
+    const walkInstance = (instance) => {
+      if (!instance || found || visited.has(instance)) return;
+      visited.add(instance);
+      inspect(instance.proxy);
+      inspect(instance.ctx);
+      inspect(instance.data);
+      inspect(instance.setupState);
+      if (found) return;
+      walkVNode(instance.subTree, walkInstance);
+    };
+    roots.forEach(walkInstance);
+    return { table: found, vueRoots: roots.length };
+  };
+  const cardRank = (card) => {
+    const values = [card && card.cardName, card && card.rank, card && card.value, card && card.name];
+    for (const value of values) {
+      if (typeof value === 'number') {
+        if (value === 14 || value === 1) return 'A';
+        if (value === 11) return 'J';
+        if (value === 12) return 'Q';
+        if (value === 13) return 'K';
+        if (value >= 2 && value <= 10) return String(value);
+      }
+      const text = String(value == null ? '' : value).trim();
+      const match = text.match(/(?:^|[^A-Z0-9])(10|[2-9]|A|J|Q|K|T|ACE|KING|QUEEN|JACK)(?:$|[^A-Z0-9])/i);
+      if (match) {
+        const rank = match[1].toUpperCase();
+        return ({ ACE: 'A', KING: 'K', QUEEN: 'Q', JACK: 'J', T: 'A' })[rank] || rank;
+      }
+    }
+    return '';
+  };
+  const cardSuit = (card) => {
+    const value = card && card.suit;
+    if (typeof value === 'number') return ({ 0: 'S', 1: 'C', 2: 'D', 3: 'H' })[value] || '';
+    const text = String(value == null ? '' : value).toLowerCase();
+    if (/spade|♠|\bs\b/.test(text)) return 'S';
+    if (/club|♣|\bc\b/.test(text)) return 'C';
+    if (/diamond|♦|\bd\b/.test(text)) return 'D';
+    if (/heart|♥|\bh\b/.test(text)) return 'H';
+    const raw = [card && card.cardName, card && card.name].map(String).join(' ');
+    const code = raw.match(/(?:^|[^A-Z0-9])(10|[A2-9JQKT])[_ -]?([CDHS])(?:$|[^A-Z0-9])/i);
+    return code ? code[2].toUpperCase() : '';
+  };
+  const cardFaceUp = (card, container) => {
+    if (!card) return null;
+    if (container && Array.isArray(container.tempOpenCards) && container.tempOpenCards.includes(card)) return true;
+    if (container && Array.isArray(container.tempClosedCards) && container.tempClosedCards.includes(card)) return false;
+    const objects = [card, card.sprite, card.cardSprite, card.sprite && card.sprite.cardSprite].filter(Boolean);
+    for (const object of objects) {
+      for (const key of Object.keys(object)) {
+        const value = object[key];
+        if (!/state|status|side|face/i.test(key)) continue;
+        if (typeof value === 'number' && (value === 20 || value === 37)) return value === 37;
+        if (typeof value === 'string') {
+          if (/closed|back|down/i.test(value)) return false;
+          if (/opened|open|front|up/i.test(value)) return true;
+        }
+      }
+      const children = Array.isArray(object.children) ? object.children : [];
+      const front = children.find((child) => /frontSide/i.test(String(child && (child.name || child.label || child.key || ''))));
+      const back = children.find((child) => /backSide/i.test(String(child && (child.name || child.label || child.key || ''))));
+      if (front && typeof front.visible === 'boolean') return front.visible;
+      if (back && typeof back.visible === 'boolean') return !back.visible;
+    }
+    const key = String(card.key || '');
+    if (/frontSide/i.test(key)) return true;
+    if (/backSide/i.test(key)) return false;
+    return null;
+  };
+  const readRuntimeBoard = () => {
+    const result = findLiveTable();
+    const table = result.table;
+    if (!table) {
+      reportDiagnostic(result.vueRoots > 0 ? 'vue-root-found' : 'vue-root-not-found');
+      return null;
+    }
+    reportDiagnosticOnce('game-table-found');
+    const valuesOf = (collection) => Array.isArray(collection) ? collection : (collection instanceof Map ? Array.from(collection.values()) : Object.values(collection || {}));
+    const columns = valuesOf(table.columnContainers);
+    if (!columns.length) return null;
+    reportDiagnosticOnce('game-columns-found');
+    const cards = [];
+    const appendContainer = (container, slotPrefix) => {
+      if (!container || typeof container.getCards !== 'function') return;
+      let pile = [];
+      try { pile = container.getCards(); } catch (_) { return; }
+      if (!Array.isArray(pile)) return;
+      pile.forEach((card, index) => {
+        const faceUp = cardFaceUp(card, container);
+        const rank = faceUp === true ? cardRank(card) : '';
+        const suit = faceUp === true ? cardSuit(card) : '';
+        const code = faceUp === false ? 'BACK' : (rank && suit ? rank + suit : 'UNKNOWN');
+        cards.push({
+          code,
+          faceUp,
+          slot: slotPrefix + ':' + String(index + 1).padStart(2, '0')
+        });
+      });
+    };
+    columns.slice(0, 7).forEach((column, index) => appendContainer(column, 'tableau:' + (index + 1)));
+    const houses = valuesOf(table.houseContainers);
+    houses.forEach((container, index) => appendContainer(container, 'foundation:' + (index + 1)));
+    appendContainer(table.deckContainer, 'deck');
+    appendContainer(table.baseContainer, 'base');
+    if (!cards.length) { reportDiagnosticOnce('game-cards-unreadable'); return null; }
+    reportDiagnosticOnce('game-cards-found');
+    const signature = cards.map((card) => card.slot + '=' + card.code + (card.faceUp === true ? ':UP' : card.faceUp === false ? ':DOWN' : ':STATE?')).join('|');
+    return { cards, signature };
+  };
   const captureBoard = () => {
     if (!started) return;
+    const runtimeSnapshot = readRuntimeBoard();
+    if (runtimeSnapshot && runtimeSnapshot.cards.length) {
+      const runtimeSignature = 'runtime|' + runtimeSnapshot.signature;
+      if (runtimeSignature !== lastBoardSignature) {
+        lastBoardSignature = runtimeSignature;
+        return send('board', { label: JSON.stringify({ cards: runtimeSnapshot.cards, signature: runtimeSignature }) });
+      }
+      return;
+    }
+    const canvas = document.querySelector('canvas.solitaire__canvas');
+    if (canvas) reportDiagnosticOnce('solitaire-canvas-found');
     const selector = '[data-card],[data-rank],[class*="card" i],[aria-label*="card" i],img[src*="card" i]';
     const rawNodes = Array.from(document.querySelectorAll(selector)).filter((node) => node instanceof HTMLElement);
     const candidates = [];
@@ -369,6 +534,8 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
     if (!event.data || event.data.type !== 'GAME_MANUAL_START_RECORDING') return;
     reportDiagnostic('start-received');
     if (!started) {
+      reportedStages.clear();
+      cachedGameTable = null;
       started = true;
       startBoardObserver();
       scheduleBoardCapture(350);
