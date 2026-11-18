@@ -126,7 +126,7 @@ function attachCapture() {
   if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
   cdpAttached = true;
   wc.debugger.on('message', (_event, method, params) => {
-    if (method !== 'Runtime.bindingCalled' || params.name !== '__GAME_CAPTURE' || !recordingActive) return;
+    if (method !== 'Runtime.bindingCalled' || params.name !== '__GAME_CAPTURE' || !recordingActive || !isAllowedRecordingPage(gameView?.webContents.getURL() || '')) return;
     let payload;
     try { payload = JSON.parse(params.payload); } catch { return; }
     if (!payload || typeof payload.type !== 'string') return;
@@ -199,8 +199,15 @@ function createWindow() {
   gameView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
   gameView.setVisible(false);
 
-  gameView.webContents.on('did-navigate', (_event, url) => sendToApp('browser-url-changed', url));
-  gameView.webContents.on('did-navigate-in-page', (_event, url) => sendToApp('browser-url-changed', url));
+  const handleBrowserNavigation = (url) => {
+    sendToApp('browser-url-changed', url);
+    if (recordingActive && !isAllowedRecordingPage(url)) {
+      recordingActive = false;
+      sendToApp('recording-auto-stop', { status: 'incomplete', reason: 'left-game-page' });
+    }
+  };
+  gameView.webContents.on('did-navigate', (_event, url) => handleBrowserNavigation(url));
+  gameView.webContents.on('did-navigate-in-page', (_event, url) => handleBrowserNavigation(url));
   gameView.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\\/\\//i.test(url)) {
       void gameView.webContents.loadURL(url);
