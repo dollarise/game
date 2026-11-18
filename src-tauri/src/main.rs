@@ -98,7 +98,7 @@ struct RecordingStartResult { stages: Vec<String>, browser_error: Option<String>
 #[tauri::command]
 fn recording_diagnostic(webview: Webview, app: AppHandle, stage: String) -> Result<(), String> {
     if webview.label() != "game-browser" { return Err("Diagnosis hanya diterima dari browser GAME.".to_string()); }
-    let allowed = ["native-start-command", "start-message-sent", "start-received", "iframe-start-sent", "mouse-captured", "iframe-event-relayed", "solitaire-canvas-found", "game-table-found", "game-columns-found", "game-cards-found", "game-cards-unreadable"];
+    let allowed = ["native-start-command", "start-message-sent", "start-received", "iframe-start-sent", "mouse-captured", "iframe-event-relayed", "solitaire-canvas-found", "vue-root-found", "vue-root-not-found", "game-table-found", "game-columns-found", "game-cards-found", "game-cards-unreadable"];
     if !allowed.contains(&stage.as_str()) { return Err("Tahap diagnosis tidak dikenal.".to_string()); }
     app.emit("recording-diagnostic", RecordingDiagnostic { stage }).map_err(|error| error.to_string())
 }
@@ -363,7 +363,10 @@ const MOUSE_RECORDING_SCRIPT: &str = r#"
   const readRuntimeBoard = () => {
     const result = findLiveTable();
     const table = result.table;
-    if (!table) return null;
+    if (!table) {
+      reportDiagnostic(result.vueRoots > 0 ? 'vue-root-found' : 'vue-root-not-found');
+      return null;
+    }
     reportDiagnostic('game-table-found');
     const valuesOf = (collection) => Array.isArray(collection) ? collection : (collection instanceof Map ? Array.from(collection.values()) : Object.values(collection || {}));
     const columns = valuesOf(table.columnContainers);
