@@ -114,7 +114,7 @@ function registerIpc() {
     if (event.sender !== browserView.webContents) return;
     try {
       if (!isAllowedSolitaire(browserView.webContents.getURL())) return;
-      if (!payload || !['move', 'click', 'board'].includes(payload.eventType)) return;
+      if (!payload || !['click', 'board'].includes(payload.eventType)) return;
       const clean = {
         eventType: payload.eventType,
         x: Number.isFinite(payload.x) ? payload.x : null,
