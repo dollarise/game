@@ -73,7 +73,7 @@ const CAPTURE_SCRIPT = String.raw`(() => {
       buttonElement.textContent, buttonElement.getAttribute('aria-label'), buttonElement.getAttribute('title')
     ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim() : '';
     const label = target ? textOf(target.closest('button,[role="button"],[data-card],[class*="card" i]') || target) : '';
-    if (/^(play(?:\s+game)?|start(?:\s+game)?|mulai(?:\s+permainan)?)$/i.test(buttonLabel)) {
+    if (/^(play(?:\s+(?:game|now))?|start(?:\s+(?:game|now|playing))?|mulai(?:\s+permainan)?|play\s*\/\s*start(?:\s+game)?)$/i.test(buttonLabel)) {
       emit({ type: 'auto-start', reason: 'play-start', x: event.clientX, y: event.clientY, label: buttonLabel, pageUrl: location.href });
     }
     drag = { x: event.clientX, y: event.clientY, label, moved: false };
